@@ -313,13 +313,17 @@ if (window.location.pathname === '/cart') {
     await utils.clickElement(btn, 'add-to-cart');
     utils.updateStatus('Waiting for cart confirmation...', 'status-running');
 
-    // Wait for modal/confirmation
+    // Wait for modal/confirmation. If Walmart changes modal markup and we time out,
+    // continue to checkout instead of hard-refreshing.
     const confirmed = await waitForAddToCartResult(3000);
-    if (!confirmed) {
+    if (confirmed === false) {
       checkoutInProgress = false;
       utils.updateStatus('Cart not confirmed — refreshing...', 'status-waiting');
       window.location.reload();
       return;
+    }
+    if (confirmed === null) {
+      console.log('[Walmart] Add-to-cart confirmation timed out, proceeding to checkout fallback.');
     }
 
     utils.updateStatus('Added to cart! Proceeding to checkout...', 'status-running');
