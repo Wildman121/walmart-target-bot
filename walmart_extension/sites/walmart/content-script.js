@@ -19,11 +19,6 @@ if (window.location.pathname === '/cart') {
       const isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
 
       if (isEnabled) {
-        const desiredQty = Number(siteSettings.quantity || 1);
-        if (desiredQty > 1) {
-          await ensureCartQuantity(desiredQty);
-        }
-
         const continueSelectors = (window.walmartSelectors?.cartPageSelectors?.continueToCheckoutButton) || [
           'button[data-automation-id="cart-continue-checkout"]',
           'button[data-testid="continue-to-checkout-button"]',
@@ -77,54 +72,6 @@ if (window.location.pathname === '/cart') {
       console.error('[Walmart Cart] Error in handleCartPageClose:', e);
     }
   })();
-
-  async function ensureCartQuantity(targetQty) {
-    try {
-      const qtyInputSelectors = [
-        'input[data-testid*="quantity"]',
-        'input[aria-label*="Quantity"]',
-        'input[name*="quantity"]'
-      ];
-      const incrementSelectors = [
-        'button[data-testid*="quantity-increment"]',
-        'button[data-automation-id*="quantity-increase"]',
-        'button[aria-label*="Increase quantity"]',
-        'button[aria-label*="Increment quantity"]',
-        'button[aria-label*="Increase"]'
-      ];
-
-      let qtyInput = null;
-      for (const sel of qtyInputSelectors) {
-        const el = document.querySelector(sel);
-        if (el && el.offsetParent !== null) {
-          qtyInput = el;
-          break;
-        }
-      }
-      if (!qtyInput) return;
-
-      const currentQty = parseInt(String(qtyInput.value || qtyInput.getAttribute('value') || '1'), 10) || 1;
-      if (currentQty >= targetQty) return;
-
-      let incrementBtn = null;
-      for (const sel of incrementSelectors) {
-        const el = document.querySelector(sel);
-        if (el && el.offsetParent !== null && !el.disabled) {
-          incrementBtn = el;
-          break;
-        }
-      }
-      if (!incrementBtn) return;
-
-      for (let i = currentQty; i < targetQty; i++) {
-        incrementBtn.click();
-        await new Promise(resolve => setTimeout(resolve, 350));
-      }
-      console.log('[Walmart Cart] Quantity adjusted to target:', targetQty);
-    } catch (err) {
-      console.warn('[Walmart Cart] Quantity adjustment skipped due to error:', err);
-    }
-  }
   window.walmartContentScriptExecuted = true;
 } else if (!window.walmartContentScriptExecuted) {
   window.walmartContentScriptExecuted = true;
@@ -427,19 +374,6 @@ if (window.location.pathname === '/cart') {
     utils.updateStatus('Adding to cart...', 'status-running');
 
     const qty = siteSettings.quantity || 1;
-
-    const buyNowBtn = finder.findElementWithSelectors(productPageSelectors.buyNow || []);
-    if (buyNowBtn && finder.isElementVisible(buyNowBtn) && !finder.isElementDisabled(buyNowBtn)) {
-      utils.updateStatus('Using Buy Now...', 'status-running');
-      await utils.clickElement(buyNowBtn, 'buy-now');
-      checkoutInProgress = false;
-      if (qty > 1) {
-        await utils.sleep(ACTION_DELAY_MS);
-        window.location.href = 'https://www.walmart.com/cart';
-      }
-      return;
-    }
-
     if (qty > 1) await setQuantity(qty);
 
     const maxAttempts = 10;
