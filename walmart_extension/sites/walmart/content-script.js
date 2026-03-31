@@ -3,8 +3,9 @@
 
 console.log('[Walmart] Starting execution.');
 console.log('[Walmart] Build marker:', 'walmart-content-3.75');
+const USE_WALMART_FLOW_2026 = true;
 
-if (window.location.pathname === '/cart') {
+if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
   // Cart page — continue to checkout, then optional auto-close logic.
   (async function handleCartPageActions() {
     try {
@@ -313,6 +314,7 @@ if (window.location.pathname === '/cart') {
 
   // ── Page handler dispatcher ───────────────────────────────────────────────
   async function handlePageType(pageType) {
+    if (USE_WALMART_FLOW_2026) return;
     if (!isEnabled) {
       utils.updateStatus('Walmart disabled', 'status-waiting');
       return;
@@ -998,6 +1000,23 @@ if (window.location.pathname === '/cart') {
 
     if (!clickedAddToCart) return;
 
+    // Fastest path: mini-cart checkout button immediately after add-to-cart.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (
+        clickBySelectors([
+          'button[data-testid="checkout-button"]',
+          'button[data-testid="proceed-to-checkout"]',
+          'button[data-automation-id="cart-continue-checkout"]',
+          'a[href*="/checkout"]'
+        ]) ||
+        clickByText(['check out', 'checkout', 'continue to checkout'])
+      ) {
+        return;
+      }
+      await sleep(250);
+    }
+
+    // Fallback path: open cart first, then continue to checkout.
     for (let attempt = 0; attempt < 30; attempt += 1) {
       if (
         clickBySelectors([
