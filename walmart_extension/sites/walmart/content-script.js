@@ -88,9 +88,8 @@ if (window.location.pathname === '/cart') {
 
     if (msg.action === 'activateSite' && msg.site === 'walmart') {
       console.log('[Walmart] Received activateSite command.');
-      isEnabled    = true;
       siteSettings = msg.siteSettings || siteSettings;
-      if (siteSettings.enabled !== undefined) isEnabled = siteSettings.enabled;
+      isEnabled    = globalSettings.enabled !== false && siteSettings.enabled === true;
       if (isEnabled) {
         loadSettingsAndStart().catch(e => console.error('[Walmart] Activation error:', e));
       }
@@ -109,12 +108,26 @@ if (window.location.pathname === '/cart') {
     }
 
     if (msg.action === 'updateSiteSetting' && msg.site === 'walmart') {
-      siteSettings[msg.setting] = msg.value;
-      if (msg.setting === 'enabled') {
-        const wasEnabled = isEnabled;
-        isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
-        if (!wasEnabled && isEnabled) loadSettingsAndStart().then(() => detectCurrentPageType() !== 'cart' && handlePageType(detectCurrentPageType()));
-        if (wasEnabled && !isEnabled) cleanupProcesses();
+      const prevEnabled = isEnabled;
+
+      if (msg.siteSettings && typeof msg.siteSettings === 'object') {
+        siteSettings = { ...siteSettings, ...msg.siteSettings };
+      } else if (msg.setting) {
+        siteSettings[msg.setting] = msg.value;
+      }
+
+      isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
+
+      if (!prevEnabled && isEnabled) {
+        loadSettingsAndStart()
+          .then(() => {
+            const pageType = detectCurrentPageType();
+            if (pageType !== 'cart') handlePageType(pageType);
+          })
+          .catch(e => console.error('[Walmart] Failed to apply updated site settings:', e));
+      }
+      if (prevEnabled && !isEnabled) {
+        cleanupProcesses();
       }
     }
 
@@ -133,13 +146,32 @@ if (window.location.pathname === '/cart') {
     return false;
   });
 
+  // Keep enable state in sync even if toggles are changed without direct tab messaging.
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+
+    const prevEnabled = isEnabled;
+    if (changes.globalSettings?.newValue) {
+      globalSettings = changes.globalSettings.newValue || {};
+    }
+    if (changes.siteSettings?.newValue?.walmart) {
+      siteSettings = changes.siteSettings.newValue.walmart || {};
+    }
+
+    isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
+    if (prevEnabled && !isEnabled) {
+      console.log('[Walmart] Detected disable via storage change; cleaning up.');
+      cleanupProcesses();
+    }
+  });
+
   // ── Settings loader ───────────────────────────────────────────────────────
   async function loadSettingsAndStart() {
     try {
       const stored = await storage.getFromStorage(['siteSettings', 'globalSettings', 'selectedProfile']);
       siteSettings   = stored.siteSettings?.walmart || {};
       globalSettings = stored.globalSettings || { autoSubmit: true, randomizeDelay: false };
-      isEnabled      = siteSettings.enabled === true;
+      isEnabled      = globalSettings.enabled !== false && siteSettings.enabled === true;
 
       const profilesData = await storage.getProfiles();
       const profiles     = profilesData.profiles || [];
@@ -245,6 +277,12 @@ if (window.location.pathname === '/cart') {
 
   // ── Add to cart (invoked by background when product page is active) ──────
   async function doAddToCart() {
+    const pageType = detectCurrentPageType();
+    if (pageType !== 'product') {
+      console.log('[Walmart] Skipping add-to-cart: not on product page. Current page type:', pageType);
+      return;
+    }
+
     if (checkoutInProgress) { console.log('[Walmart] Add-to-cart already in progress.'); return; }
     checkoutInProgress = true;
     currentStep = 'add-to-cart';
