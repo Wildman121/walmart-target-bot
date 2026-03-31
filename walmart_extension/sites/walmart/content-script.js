@@ -49,6 +49,20 @@ if (window.location.pathname === '/cart') {
           return;
         }
 
+        const textButtons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+        const continueByText = textButtons.find(el => {
+          const txt = (el.textContent || '').trim().toLowerCase();
+          const visible = el.offsetParent !== null;
+          const disabled = el.disabled || el.getAttribute('aria-disabled') === 'true';
+          return visible && !disabled && (txt.includes('continue to checkout') || txt === 'checkout');
+        });
+        if (continueByText) {
+          console.log('[Walmart Cart] Continue to checkout button found by text, clicking.');
+          continueByText.click();
+          await chrome.storage.local.set({ cartCloseAttempted: true });
+          return;
+        }
+
         console.warn('[Walmart Cart] Continue to checkout button not found.');
       }
 
@@ -122,6 +136,18 @@ if (window.location.pathname === '/cart') {
   let cvvConfirmClicked   = false;
   let cardVerifyClicked   = false;
   let antiBotDetected     = false;
+
+  function clickVisibleButtonByText(textCandidates, actionName) {
+    const candidates = Array.isArray(textCandidates) ? textCandidates : [textCandidates];
+    for (const text of candidates) {
+      if (!text) continue;
+      const btn = finder.findButtonByText(String(text), ['button', 'a', '[role="button"]']);
+      if (btn && finder.isElementVisible(btn) && !finder.isElementDisabled(btn)) {
+        return utils.clickElement(btn, actionName || 'click-by-text').then(() => true);
+      }
+    }
+    return Promise.resolve(false);
+  }
 
   // ── Message listener ──────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -383,7 +409,10 @@ if (window.location.pathname === '/cart') {
       throw new Error('Add to cart button not found after ' + maxAttempts + ' attempts');
     }
 
-    await utils.clickElement(btn, 'add-to-cart');
+    const clickedAddToCartByText = await clickVisibleButtonByText(['add to cart'], 'add-to-cart');
+    if (!clickedAddToCartByText) {
+      await utils.clickElement(btn, 'add-to-cart');
+    }
     utils.updateStatus('Waiting for cart confirmation...', 'status-running');
 
     // Wait for modal/confirmation. If Walmart changes modal markup and we time out,
@@ -406,6 +435,9 @@ if (window.location.pathname === '/cart') {
     await utils.sleep(ACTION_DELAY_MS);
 
     // Follow the requested flow: product -> cart -> checkout.
+    const clickedViewCartByText = await clickVisibleButtonByText(['view cart'], 'view-cart');
+    if (clickedViewCartByText) return;
+
     const viewCartBtn = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.viewCartButton || []);
     if (viewCartBtn && finder.isElementVisible(viewCartBtn)) {
       await utils.clickElement(viewCartBtn, 'view-cart');
@@ -666,6 +698,17 @@ if (window.location.pathname === '/cart') {
     }
 
     utils.updateStatus('Placing order...', 'status-running');
+    const clickedPlaceOrderByText = await clickVisibleButtonByText(
+      ['place order for', 'place order'],
+      'place-order'
+    );
+    if (clickedPlaceOrderByText) {
+      placeOrderClicked = true;
+      utils.updateStatus('Order submitted!', 'status-complete');
+      console.log('[Walmart] Place order clicked by text.');
+      return;
+    }
+
     const btnSels = checkoutPageSelectors.placeOrderButtonSelectors || [checkoutPageSelectors.placeOrderButton];
     const btn = finder.findElementWithSelectors(btnSels);
 
