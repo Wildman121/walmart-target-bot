@@ -146,6 +146,25 @@ if (window.location.pathname === '/cart') {
     return false;
   });
 
+  // Keep enable state in sync even if toggles are changed without direct tab messaging.
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+
+    const prevEnabled = isEnabled;
+    if (changes.globalSettings?.newValue) {
+      globalSettings = changes.globalSettings.newValue || {};
+    }
+    if (changes.siteSettings?.newValue?.walmart) {
+      siteSettings = changes.siteSettings.newValue.walmart || {};
+    }
+
+    isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
+    if (prevEnabled && !isEnabled) {
+      console.log('[Walmart] Detected disable via storage change; cleaning up.');
+      cleanupProcesses();
+    }
+  });
+
   // ── Settings loader ───────────────────────────────────────────────────────
   async function loadSettingsAndStart() {
     try {

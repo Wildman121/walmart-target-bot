@@ -77,6 +77,19 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
     if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
       if (!isWalmartUrl(tab.url)) return;
 
+      // Hard gate: if Walmart or global toggle is off, do not inject scripts at all.
+      // This prevents any page-level automation from running while disabled.
+      const gateData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
+      const walmartEnabled = (gateData.siteSettings || {}).walmart?.enabled === true;
+      const globalEnabled = gateData.globalSettings?.enabled !== false;
+      if (!walmartEnabled || !globalEnabled) {
+        console.log(
+          '[Walmart BG] Skipping script injection because automation is disabled.',
+          { walmartEnabled, globalEnabled }
+        );
+        return;
+      }
+
       const pageType = detectWalmartPageType(tab.url);
       console.log('[Walmart BG] Page type:', pageType, 'URL:', tab.url);
 
