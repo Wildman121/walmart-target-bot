@@ -37,6 +37,9 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete') return;
     if (!tab?.url || !isWalmartUrl(tab.url)) return;
+    const onProductPage = isDirectWalmartProductPage(tab.url);
+    const onCartPage = tab.url.startsWith('https://www.walmart.com/cart');
+    if (!onProductPage && !onCartPage) return;
 
     const settingsData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
     const walmartSettings = (settingsData.siteSettings || {}).walmart || {};
@@ -48,12 +51,11 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
     }
 
     // If Walmart sends us to cart after add-to-cart, immediately continue to checkout.
-    if (tab.url.startsWith('https://www.walmart.com/cart')) {
+    if (onCartPage) {
       chrome.tabs.update(tabId, { url: 'https://www.walmart.com/checkout' });
       return;
     }
-
-    if (!isDirectWalmartProductPage(tab.url)) return;
+    // Remaining path is direct product page.
 
     try {
       await injectScripts(tabId, WALMART_SCRIPTS);
