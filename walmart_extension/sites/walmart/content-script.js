@@ -772,3 +772,116 @@ if (window.location.pathname === '/cart') {
 
 
 }
+
+
+/* WALMART PRODUCT->CART->CHECKOUT->PLACE ORDER HOTFIX */
+(() => {
+  if (window.__walmartCartCheckoutHotfixAppliedV2) return;
+  window.__walmartCartCheckoutHotfixAppliedV2 = true;
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const isVisible = (el) => !!el && !el.disabled && el.offsetParent !== null;
+
+  const clickElement = (el) => {
+    if (!isVisible(el)) return false;
+    try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) {}
+    el.click();
+    return true;
+  };
+
+  const clickBySelectors = (selectors) => {
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      if (clickElement(el)) return true;
+    }
+    return false;
+  };
+
+  const clickByText = (texts) => {
+    const needles = texts.map((text) => text.toLowerCase());
+    const targets = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    for (const target of targets) {
+      const value = (target.textContent || '').trim().toLowerCase();
+      if (!value) continue;
+      if (needles.some((needle) => value.includes(needle)) && clickElement(target)) return true;
+    }
+    return false;
+  };
+
+  const runProductFlow = async () => {
+    const clickedAddToCart =
+      clickBySelectors([
+        '[data-automation-id="atc-button"]',
+        'button[data-testid="ip-add-to-cart-btn"]',
+        'button[data-testid="add-to-cart-btn"]',
+        '#btn-atc'
+      ]) || clickByText(['add to cart']);
+
+    if (!clickedAddToCart) return;
+
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      if (
+        clickBySelectors([
+          'button[data-testid="view-cart-btn"]',
+          'button[data-automation-id="view-cart-btn"]',
+          '[data-testid="cart-count-link"]',
+          'a[href="/cart"]',
+          '[data-automation-id="cart-icon"]'
+        ]) ||
+        clickByText(['view cart', 'go to cart'])
+      ) {
+        return;
+      }
+      await sleep(250);
+    }
+
+    window.location.href = 'https://www.walmart.com/cart';
+  };
+
+  const runCartFlow = async () => {
+    for (let attempt = 0; attempt < 35; attempt += 1) {
+      if (
+        clickBySelectors([
+          'button[data-automation-id="cart-continue-checkout"]',
+          'button[data-testid="continue-to-checkout-button"]',
+          'button[data-testid="checkout-button"]',
+          'button[data-testid="proceed-to-checkout"]',
+          'button[aria-label*="Continue to checkout"]',
+          'a[href*="/checkout"]'
+        ]) ||
+        clickByText(['continue to checkout', 'proceed to checkout', 'checkout'])
+      ) {
+        return;
+      }
+      await sleep(350);
+    }
+
+    window.location.href = 'https://www.walmart.com/checkout';
+  };
+
+  const runCheckoutFlow = async () => {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (
+        clickBySelectors([
+          'button[data-testid="place-order-btn"]',
+          'button[data-automation-id="place-order-btn"]',
+          'button[aria-label*="Place order"]',
+          '#place-order-btn'
+        ]) ||
+        clickByText(['place order'])
+      ) {
+        return;
+      }
+      await sleep(500);
+    }
+  };
+
+  const path = window.location.pathname.toLowerCase();
+  if (path.startsWith('/checkout')) {
+    runCheckoutFlow();
+  } else if (path === '/cart') {
+    runCartFlow();
+  } else if (window.location.href.startsWith('https://www.walmart.com/ip/')) {
+    runProductFlow();
+  }
+})();
