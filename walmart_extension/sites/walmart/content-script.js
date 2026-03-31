@@ -906,7 +906,80 @@ if (window.location.pathname === '/cart') {
     return false;
   };
 
+  const readSelectedQuantity = async () => {
+    const parseQty = (value) => {
+      const parsed = Number.parseInt(String(value ?? ''), 10);
+      return Number.isFinite(parsed) ? Math.min(5, Math.max(1, parsed)) : null;
+    };
+
+    try {
+      if (typeof chrome !== 'undefined' && chrome?.storage?.local?.get) {
+        const data = await chrome.storage.local.get(['siteSettings']);
+        const qty = parseQty(data?.siteSettings?.walmart?.quantity);
+        if (qty) return qty;
+      }
+    } catch (error) {
+      console.warn('[Walmart Hotfix] Could not read selected quantity from storage:', error);
+    }
+
+    return 1;
+  };
+
+  const setProductQuantity = async (targetQty) => {
+    if (targetQty <= 1) return;
+
+    const dropdown = [
+      'select[data-testid="quantity-select"]',
+      'select[name="quantity"]',
+      'select[aria-label*="Quantity"]'
+    ].map((selector) => document.querySelector(selector)).find(Boolean);
+
+    if (dropdown) {
+      const option = Array.from(dropdown.options || []).find((opt) => (
+        Number.parseInt(opt.value, 10) === targetQty ||
+        Number.parseInt((opt.textContent || '').trim(), 10) === targetQty
+      ));
+      if (option) {
+        dropdown.value = option.value;
+        dropdown.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(250);
+        return;
+      }
+    }
+
+    const incrementBtn = [
+      '[data-testid="quantity-increment-btn"]',
+      'button[data-testid*="quantity-increment"]',
+      'button[data-automation-id*="quantity-increase"]',
+      'button[aria-label*="Increase quantity"]'
+    ].map((selector) => document.querySelector(selector)).find((el) => isVisible(el));
+
+    const quantityInput = [
+      '[data-testid="quantity-input"]',
+      'input[data-testid*="quantity"]',
+      'input[aria-label*="Quantity"]'
+    ].map((selector) => document.querySelector(selector)).find(Boolean);
+
+    if (!incrementBtn || !quantityInput) return;
+
+    const readCurrentQty = () => {
+      const raw = quantityInput.value || quantityInput.getAttribute('value') || quantityInput.textContent || '1';
+      const parsed = Number.parseInt(String(raw).trim(), 10);
+      return Number.isFinite(parsed) ? parsed : 1;
+    };
+
+    let currentQty = readCurrentQty();
+    while (currentQty < targetQty) {
+      if (!clickElement(incrementBtn)) break;
+      await sleep(250);
+      currentQty = readCurrentQty();
+    }
+  };
+
   const runProductFlow = async () => {
+    const selectedQty = await readSelectedQuantity();
+    await setProductQuantity(selectedQty);
+
     const clickedAddToCart =
       clickBySelectors([
         '[data-automation-id="atc-button"]',
