@@ -185,9 +185,25 @@ const _0x108d00=_0x34cb;(function(_0x24535e,_0x4116ed){const _0x38bce7=_0x34cb,_
     const added =
       clickBySelectors([
         'button[data-test="addToCartButton"]',
+        'button[data-test="shipItButton"]',
+        'button[data-test="orderPickupButton"]',
+        'button[data-test="pickupButton"]',
+        'button[data-test="sameDayButton"]',
+        'button[data-test="deliveryButton"]',
+        'button[data-test="shippingButton"]',
+        'button[data-test="fulfillment-cell-shipping"]',
+        'button[data-test="fulfillment-cell-pickup"]',
+        'button[data-test="fulfillment-cell-delivery"]',
         'button[id^="addToCartButtonOrTextIdFor"]',
         'button[data-test="preorderButton"]'
-      ]) || clickByText(['add to cart', 'pre-order', 'preorder']);
+      ]) || clickByText([
+        'add to cart',
+        'ship it',
+        'pick up',
+        'same day delivery',
+        'pre-order',
+        'preorder'
+      ]);
 
     if (!added) {
       console.warn('[Target Hotfix V2] Add to cart button not found.');
