@@ -36,14 +36,16 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
 
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete') return;
-    if (!tab?.url || !isWalmartUrl(tab.url)) return;
+    if (!tab || !tab.url || !isWalmartUrl(tab.url)) return;
     const onProductPage = isDirectWalmartProductPage(tab.url);
     const onCartPage = tab.url.startsWith('https://www.walmart.com/cart');
     if (!onProductPage && !onCartPage) return;
 
     const settingsData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
-    const walmartSettings = (settingsData.siteSettings || {}).walmart || {};
-    const globalEnabled = settingsData.globalSettings?.enabled !== false;
+    const allSiteSettings = settingsData.siteSettings || {};
+    const walmartSettings = allSiteSettings.walmart || {};
+    const allGlobalSettings = settingsData.globalSettings || {};
+    const globalEnabled = allGlobalSettings.enabled !== false;
     const walmartEnabled = walmartSettings.enabled === true;
 
     if (!globalEnabled || !walmartEnabled) {
