@@ -3,9 +3,7 @@
 
 console.log('[Walmart] Starting execution.');
 console.log('[Walmart] Build marker:', 'walmart-content-3.75');
-const USE_WALMART_FLOW_2026 = false;
-
-if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
+if (window.location.pathname === '/cart') {
   // Cart page — continue to checkout, then optional auto-close logic.
   (async function handleCartPageActions() {
     try {
@@ -314,7 +312,6 @@ if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
 
   // ── Page handler dispatcher ───────────────────────────────────────────────
   async function handlePageType(pageType) {
-    if (USE_WALMART_FLOW_2026) return;
     if (!isEnabled) {
       utils.updateStatus('Walmart disabled', 'status-waiting');
       return;
