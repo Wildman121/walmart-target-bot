@@ -264,11 +264,34 @@ const walmartLoginPageSelectors = {
   ]
 };
 
+const walmartAntiBotSelectors = {
+  challengeContainers: [
+    '[data-testid="captcha-container"]',
+    '#px-captcha',
+    '#captcha-container',
+    'iframe[src*="captcha"]',
+    'iframe[title*="challenge"]',
+    'iframe[title*="CAPTCHA"]',
+    'form[action*="challenge"]',
+    '[data-automation-id*="challenge"]',
+    '[class*="captcha"]',
+    '[id*="captcha"]'
+  ],
+  challengeText: [
+    'Verify you are a human',
+    'Press and hold',
+    'Security checkpoint',
+    'Please complete the challenge',
+    'unusual activity'
+  ]
+};
+
 window.walmartSelectors = {
   productPageSelectors: walmartProductPageSelectors,
   checkoutPageSelectors: walmartCheckoutPageSelectors,
   popupSelectors: walmartPopupSelectors,
-  loginPageSelectors: walmartLoginPageSelectors
+  loginPageSelectors: walmartLoginPageSelectors,
+  antiBotSelectors: walmartAntiBotSelectors
 };
 
 console.log('sites/walmart/selectors.js: Script loaded.');
