@@ -876,6 +876,9 @@ if (window.location.pathname === '/cart') {
 
 /* WALMART PRODUCT->CART->CHECKOUT->PLACE ORDER HOTFIX */
 (() => {
+  // The primary Walmart automation above already handles product/cart/checkout.
+  // Running this legacy hotfix in parallel can cause duplicate clicks and race conditions.
+  if (window.walmartContentScriptExecuted) return;
   if (window.__walmartCartCheckoutHotfixAppliedV2) return;
   window.__walmartCartCheckoutHotfixAppliedV2 = true;
 
