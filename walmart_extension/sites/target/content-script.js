@@ -2,22 +2,22 @@ const _0x108d00=_0x34cb;(function(_0x24535e,_0x4116ed){const _0x38bce7=_0x34cb,_
 
 /* TARGET CART->CHECKOUT->PLACE ORDER HOTFIX */
 (() => {
-  if (window.__targetCartCheckoutHotfixApplied) return;
-  window.__targetCartCheckoutHotfixApplied = true;
+  if (window.__targetCartCheckoutHotfixAppliedV2) return;
+  window.__targetCartCheckoutHotfixAppliedV2 = true;
 
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const isVisible = (el) => !!el && !el.disabled && el.offsetParent !== null;
 
   const clickElement = (el) => {
     if (!isVisible(el)) return false;
-    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    try {
+      el.scrollIntoView({ block: 'center', inline: 'center' });
+    } catch (_) {}
     el.click();
     return true;
   };
 
-  const clickFirstVisible = (selectors) => {
+  const clickBySelectors = (selectors) => {
     for (const selector of selectors) {
       const el = document.querySelector(selector);
       if (clickElement(el)) return true;
@@ -25,205 +25,185 @@ const _0x108d00=_0x34cb;(function(_0x24535e,_0x4116ed){const _0x38bce7=_0x34cb,_
     return false;
   };
 
-  const clickButtonByText = (texts) => {
-    const buttons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-    for (const button of buttons) {
-      const text = (button.textContent || '').trim().toLowerCase();
+  const clickByText = (texts) => {
+    const targets = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    const needles = texts.map((t) => t.toLowerCase());
+    for (const target of targets) {
+      const text = (target.textContent || '').trim().toLowerCase();
       if (!text) continue;
-      if (texts.some((t) => text.includes(t)) && clickElement(button)) {
-        return true;
-      }
+      if (needles.some((needle) => text.includes(needle)) && clickElement(target)) return true;
     }
     return false;
   };
 
-  const getRequestedQuantity = async () => {
-    const parseQty = (value) => {
+  const readQuantity = async () => {
+    const toPositiveInt = (value) => {
       const n = Number.parseInt(String(value ?? ''), 10);
       return Number.isFinite(n) && n > 0 ? n : null;
     };
 
-    const localCandidates = [
+    const localValues = [
       window.sessionStorage?.getItem('target_module_quantity'),
       window.localStorage?.getItem('target_module_quantity'),
       window.sessionStorage?.getItem('quantity'),
       window.localStorage?.getItem('quantity')
     ];
 
-    for (const candidate of localCandidates) {
-      const parsed = parseQty(candidate);
+    for (const value of localValues) {
+      const parsed = toPositiveInt(value);
       if (parsed) return parsed;
     }
 
     if (typeof chrome !== 'undefined' && chrome?.storage?.local?.get) {
       try {
         const data = await chrome.storage.local.get(['target_module_settings', 'target_module_quantity', 'quantity']);
-        const nested = data?.target_module_settings?.target?.quantity;
-        const candidates = [nested, data?.target_module_quantity, data?.quantity];
-        for (const candidate of candidates) {
-          const parsed = parseQty(candidate);
+        const candidates = [
+          data?.target_module_settings?.target?.quantity,
+          data?.target_module_quantity,
+          data?.quantity
+        ];
+        for (const value of candidates) {
+          const parsed = toPositiveInt(value);
           if (parsed) return parsed;
         }
       } catch (err) {
-        console.warn('[Target Hotfix] Failed to read chrome storage quantity.', err);
+        console.warn('[Target Hotfix V2] Could not read quantity from storage.', err);
       }
     }
 
     return 1;
   };
 
-  const setQuantityOnProductPage = async (requestedQty) => {
-    const qty = clamp(requestedQty, 1, 20);
-    if (qty <= 1) return true;
+  const setQuantity = async (quantity) => {
+    if (quantity <= 1) return;
 
-    const stepperIncSelectors = [
-      'button[data-test="stepperIncrement"]',
-      '[data-test="stepperIncrement"]',
-      '[data-test="qty-inc"]',
-      'button[aria-label*="increase quantity" i]',
-      'button[aria-label*="increment" i]'
-    ];
-
-    const stepperValueSelectors = [
-      '[data-test="stepperValue"]',
-      '[data-test*="quantity" i] [aria-live]',
-      '[aria-label*="quantity" i]'
-    ];
-
-    const dropdownSelectors = [
+    const dropdown = [
       'select[data-test="quantitySelect"]',
       'select[aria-label*="quantity" i]',
       'select[name*="quantity" i]'
-    ];
+    ].map((selector) => document.querySelector(selector)).find(Boolean);
 
-    const dropdown = dropdownSelectors.map((s) => document.querySelector(s)).find(Boolean);
     if (dropdown) {
-      const option = Array.from(dropdown.options).find((opt) => Number.parseInt(opt.value, 10) === qty || Number.parseInt(opt.textContent || '', 10) === qty);
+      const option = Array.from(dropdown.options).find((opt) => {
+        const byValue = Number.parseInt(opt.value, 10) === quantity;
+        const byText = Number.parseInt((opt.textContent || '').trim(), 10) === quantity;
+        return byValue || byText;
+      });
       if (option) {
         dropdown.value = option.value;
         dropdown.dispatchEvent(new Event('change', { bubbles: true }));
-        console.log(`[Target Hotfix] Quantity set via dropdown: ${qty}`);
-        await sleep(250);
-        return true;
+        await sleep(200);
+        return;
       }
     }
 
-    const readStepperValue = () => {
-      for (const selector of stepperValueSelectors) {
-        const el = document.querySelector(selector);
-        if (!el) continue;
-        const n = Number.parseInt((el.textContent || el.getAttribute('value') || '').trim(), 10);
-        if (Number.isFinite(n) && n > 0) return n;
-      }
-      return 1;
+    const increment = [
+      'button[data-test="stepperIncrement"]',
+      '[data-test="stepperIncrement"]',
+      '[data-test="qty-inc"]',
+      'button[aria-label*="increase quantity" i]'
+    ].map((selector) => document.querySelector(selector)).find((el) => isVisible(el));
+
+    if (!increment) return;
+
+    const readCurrent = () => {
+      const valueEl = document.querySelector('[data-test="stepperValue"], [data-test*="quantity" i] [aria-live]');
+      const raw = valueEl?.textContent || valueEl?.getAttribute?.('value') || '1';
+      const parsed = Number.parseInt(String(raw).trim(), 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
     };
 
-    const increment = stepperIncSelectors.map((s) => document.querySelector(s)).find((el) => isVisible(el));
-    if (!increment) {
-      console.warn('[Target Hotfix] Could not find quantity controls. Continuing with default quantity.');
-      return false;
-    }
-
-    let current = readStepperValue();
-    while (current < qty) {
+    let current = readCurrent();
+    while (current < quantity) {
       if (!clickElement(increment)) break;
-      await sleep(300);
-      current = readStepperValue();
-      if (current >= qty) break;
+      await sleep(250);
+      current = readCurrent();
     }
-
-    console.log(`[Target Hotfix] Quantity target=${qty}, current=${current}`);
-    return current >= qty;
   };
 
-  const clickAddToCart = async () => {
-    const addSelectors = [
-      'button[data-test="addToCartButton"]',
-      'button[id^="addToCartButtonOrTextIdFor"]',
-      'button[data-test="preorderButton"]'
-    ];
-
-    if (clickFirstVisible(addSelectors) || clickButtonByText(['add to cart', 'preorder', 'pre-order'])) {
-      console.log('[Target Hotfix] Clicked Add to cart.');
-      return true;
-    }
-
-    console.warn('[Target Hotfix] Add to cart button not found.');
-    return false;
-  };
-
-  async function goToCartAfterAdd() {
-    const cartIconSelectors = [
-      'a[href*="/cart"]',
-      'button[aria-label*="cart" i]',
-      '[data-test*="cart" i] a[href*="/cart"]',
-      '[data-test*="cart" i] button',
-      '[data-test="errorContent-viewCartButton"]'
-    ];
-
-    for (let i = 0; i < 40; i += 1) {
-      if (clickButtonByText(['view cart']) || clickFirstVisible(cartIconSelectors)) {
-        console.log('[Target Hotfix] Clicked View cart/cart icon.');
+  const openCart = async () => {
+    for (let attempt = 0; attempt < 45; attempt += 1) {
+      if (
+        clickByText(['view cart', 'go to cart', 'cart']) ||
+        clickBySelectors([
+          'a[data-test="errorContent-viewCartButton"]',
+          'a[href*="/cart"]',
+          'button[aria-label*="cart" i]',
+          '[data-test*="cart" i] a[href*="/cart"]'
+        ])
+      ) {
         return true;
       }
-      await sleep(300);
+      await sleep(250);
     }
 
-    return false;
-  }
+    window.location.href = 'https://www.target.com/cart';
+    return true;
+  };
 
-  async function handleProductPageFlow() {
-    const qty = await getRequestedQuantity();
-    console.log(`[Target Hotfix] Requested quantity: ${qty}`);
-
-    await setQuantityOnProductPage(qty);
-
-    const addClicked = await clickAddToCart();
-    if (!addClicked) return;
-
-    const cartOpened = await goToCartAfterAdd();
-    if (!cartOpened) {
-      console.warn('[Target Hotfix] Could not find View cart/cart icon after adding item.');
-    }
-  }
-
-  async function handleCartContinueToCheckout() {
-    for (let i = 0; i < 30; i += 1) {
-      const selectors = [
-        'button[data-test*="continue" i]',
-        'button[aria-label*="continue to checkout" i]',
-        'button[aria-label*="checkout" i]',
-        'a[href*="/checkout"]'
-      ];
-
-      if (clickButtonByText(['continue to check out', 'continue to checkout']) || clickFirstVisible(selectors)) {
-        console.log('[Target Hotfix] Clicked Continue to check out.');
-        return;
-      }
-
-      await sleep(500);
-    }
-  }
-
-  async function handleCheckoutPlaceOrder() {
-    for (let i = 0; i < 30; i += 1) {
+  const continueToCheckout = async () => {
+    for (let attempt = 0; attempt < 35; attempt += 1) {
       if (
-        clickFirstVisible(['button[data-test="placeOrderButton"]', 'button[data-test*="placeorder" i]']) ||
-        clickButtonByText(['place order'])
+        clickByText(['continue to checkout', 'continue to check out', 'checkout']) ||
+        clickBySelectors([
+          'button[data-test="fulfillment-continue-button"]',
+          'button[data-test*="continue" i]',
+          'button[aria-label*="continue to checkout" i]',
+          'button[aria-label*="checkout" i]',
+          'a[href*="/checkout"]'
+        ])
       ) {
-        console.log('[Target Hotfix] Clicked Place order.');
-        return;
+        return true;
       }
-      await sleep(800);
+      await sleep(400);
     }
-  }
+
+    window.location.href = 'https://www.target.com/checkout';
+    return true;
+  };
+
+  const placeOrder = async () => {
+    for (let attempt = 0; attempt < 35; attempt += 1) {
+      if (
+        clickBySelectors([
+          'button[data-test="placeOrderButton"]',
+          'button[data-test*="placeorder" i]'
+        ]) ||
+        clickByText(['place order', 'submit order'])
+      ) {
+        return true;
+      }
+      await sleep(700);
+    }
+    return false;
+  };
+
+  const runProductFlow = async () => {
+    const quantity = await readQuantity();
+    await setQuantity(quantity);
+
+    const added =
+      clickBySelectors([
+        'button[data-test="addToCartButton"]',
+        'button[id^="addToCartButtonOrTextIdFor"]',
+        'button[data-test="preorderButton"]'
+      ]) || clickByText(['add to cart', 'pre-order', 'preorder']);
+
+    if (!added) {
+      console.warn('[Target Hotfix V2] Add to cart button not found.');
+      return;
+    }
+
+    await openCart();
+  };
 
   const path = window.location.pathname.toLowerCase();
-  if (path.includes('/cart')) {
-    handleCartContinueToCheckout();
-  } else if (path.includes('/checkout')) {
-    handleCheckoutPlaceOrder();
+
+  if (path.includes('/checkout')) {
+    placeOrder();
+  } else if (path.includes('/cart')) {
+    continueToCheckout();
   } else {
-    handleProductPageFlow();
+    runProductFlow();
   }
 })();
