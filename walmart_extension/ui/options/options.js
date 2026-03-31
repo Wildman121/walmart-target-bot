@@ -44,33 +44,3 @@ const _0x3f2fa8=_0x57cc;function _0x57cc(_0x4ba45b,_0x5ce24a){const _0x2a4afa=_0
     initWalmartCredentials();
   }
 })();
-
-// ── Final confirmation setting bridge ─────────────────────────────────────
-(function() {
-  function initRequireFinalConfirmSetting() {
-    const checkbox = document.getElementById('require-final-confirm');
-    const saveBtn = document.getElementById('save-settings-btn');
-    if (!checkbox || !saveBtn) return;
-
-    chrome.storage.local.get(['globalSettings'], (data) => {
-      const globalSettings = data?.globalSettings || {};
-      checkbox.checked = globalSettings.requireFinalConfirm === true;
-    });
-
-    saveBtn.addEventListener('click', () => {
-      chrome.storage.local.get(['globalSettings'], (data) => {
-        const globalSettings = data?.globalSettings || {};
-        globalSettings.requireFinalConfirm = checkbox.checked === true;
-        chrome.storage.local.set({ globalSettings }, () => {
-          console.log('[Options] requireFinalConfirm saved:', globalSettings.requireFinalConfirm);
-        });
-      });
-    }, { capture: false });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initRequireFinalConfirmSetting);
-  } else {
-    initRequireFinalConfirmSetting();
-  }
-})();

@@ -18,13 +18,6 @@ const walmartProductPageSelectors = {
     '#btn-atc',
     '.WMButton[data-tl-id="atc-button"]'
   ],
-  buyNow: [
-    'button[data-testid="buy-now-btn"]',
-    'button[data-automation-id="buy-now-button"]',
-    'button[aria-label*="Buy now"]',
-    'button[aria-label*="Buy Now"]',
-    'button[data-testid="ip-buy-now-btn"]'
-  ],
   addToCartResult: {
     successContainer: [
       '[data-testid="cart-added-modal"]',
@@ -38,10 +31,6 @@ const walmartProductPageSelectors = {
       '[role="alert"]'
     ],
     viewCartButton: [
-      'button[data-testid="view-cart-btn"]',
-      'button[data-automation-id="view-cart-btn"]',
-      'button[aria-label*="View cart"]',
-      'button[aria-label*="View Cart"]',
       '[data-testid="cart-count-link"]',
       'a[href="/cart"]',
       '[data-automation-id="cart-icon"]'
@@ -246,9 +235,7 @@ const walmartCartPageSelectors = {
     'button[data-automation-id="cart-continue-checkout"]',
     'button[data-testid="continue-to-checkout-button"]',
     'button[data-testid="checkout-button"]',
-    'button[data-testid="proceed-to-checkout"]',
     'button[aria-label*="Continue to checkout"]',
-    'button[aria-label*="Proceed to checkout"]',
     'button[aria-label*="Checkout"]',
     'a[href*="/checkout"]'
   ]

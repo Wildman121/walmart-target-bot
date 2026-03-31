@@ -11,4 +11,3 @@
   window.__walmartLegacyCheckoutStubLoaded = true;
   console.log('[Walmart Legacy Checkout] Disabled stub loaded.');
 })();
-
