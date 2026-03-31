@@ -218,6 +218,8 @@ if (window.location.pathname === '/cart') {
       case 'product':
         utils.updateStatus('Product page detected', 'status-waiting');
         setupProductPageObserver();
+        await utils.sleep(250);
+        doAddToCart().catch(handleError);
         break;
       case 'checkout':
         utils.updateStatus('Starting checkout...', 'status-running');
