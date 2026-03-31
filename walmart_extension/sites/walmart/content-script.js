@@ -2,6 +2,7 @@
 // Mirrors the structure of the Target content script.
 
 console.log('[Walmart] Starting execution.');
+console.log('[Walmart] Build marker:', 'walmart-content-3.75');
 
 if (window.location.pathname === '/cart') {
   // Cart page — handle auto-close logic

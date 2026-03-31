@@ -5,6 +5,7 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
 
 (function() {
   'use strict';
+  const WALMART_HANDLER_BUILD = 'walmart-handler-3.75';
 
   function isWalmartUrl(url) {
     return typeof url === 'string' && url.includes('walmart.com') && !url.startsWith('chrome://');
@@ -60,5 +61,5 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
     }
   });
 
-  console.log('[Walmart BG] Minimal product-page-only handler active.');
+  console.log('[Walmart BG] Minimal product-page-only handler active.', WALMART_HANDLER_BUILD);
 })();
