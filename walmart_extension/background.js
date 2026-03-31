@@ -13,10 +13,7 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
 
   function detectWalmartPageType(url) {
     if (!url) return 'unknown';
-    if (url.includes('walmart.com/checkout')) return 'checkout';
-    if (url.includes('walmart.com/cart'))     return 'cart';
-    if (/walmart\.com\/ip\//.test(url))       return 'product';
-    if (url.includes('walmart.com/account/login') || url.includes('walmart.com/login')) return 'login';
+    if (url.startsWith('https://www.walmart.com/ip/')) return 'product';
     return 'unknown';
   }
 
@@ -27,7 +24,6 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
     'common/storage.js',
     'common/checkout-base.js',
     'sites/walmart/selectors.js',
-    'sites/walmart/checkout.js',
     'sites/walmart/content-script.js'
   ];
 
@@ -49,6 +45,10 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
   // ── Tab update listener for Walmart ─────────────────────────────────────
   chrome.tabs.onUpdated.addListener(async function(tabId, changeInfo, tab) {
     if (!tab.url || !isWalmartUrl(tab.url)) return;
+    if (!tab.url.startsWith('https://www.walmart.com/ip/')) {
+      // Explicit product-page-only mode requested by user.
+      return;
+    }
 
     // --- Cart-page redirect detection (mirrors Target logic) ---------------
     if (changeInfo.url && tab.url && tab.url.includes('walmart.com')) {
@@ -78,6 +78,19 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
     if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
       if (!isWalmartUrl(tab.url)) return;
 
+      // Hard gate: if Walmart or global toggle is off, do not inject scripts at all.
+      // This prevents any page-level automation from running while disabled.
+      const gateData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
+      const walmartEnabled = (gateData.siteSettings || {}).walmart?.enabled === true;
+      const globalEnabled = gateData.globalSettings?.enabled !== false;
+      if (!walmartEnabled || !globalEnabled) {
+        console.log(
+          '[Walmart BG] Skipping script injection because automation is disabled.',
+          { walmartEnabled, globalEnabled }
+        );
+        return;
+      }
+
       const pageType = detectWalmartPageType(tab.url);
       console.log('[Walmart BG] Page type:', pageType, 'URL:', tab.url);
 
@@ -86,10 +99,15 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
         // Give the scripts 200ms to initialise then send detectPage
         if (pageType !== 'unknown') {
           setTimeout(async () => {
-            const tabData = await chrome.storage.local.get(['siteSettings']);
+            const tabData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
             const ss = (tabData.siteSettings || {}).walmart || {};
+            const globalEnabled = tabData.globalSettings?.enabled !== false;
             if (!ss.enabled) {
               console.log('[Walmart BG] Walmart disabled in settings — not activating.');
+              return;
+            }
+            if (!globalEnabled) {
+              console.log('[Walmart BG] Global toggle is off — not activating Walmart.');
               return;
             }
             chrome.tabs.sendMessage(tabId, {
