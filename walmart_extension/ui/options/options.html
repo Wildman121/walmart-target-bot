@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- VERSION NOTE: Title is dynamically set by options.js using manifest.json version -->
+  <title>Polar Assist Bot Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <header>
+    <!-- VERSION NOTE: The version span is dynamically populated by options.js using chrome.runtime.getManifest().version -->
+    <h1>Polar Assist Bot <span class="version-display"></span> Settings</h1>
+    <a href="../popup/popup.html" class="btn">Back to Popup</a>
+  </header>
+
+  <div class="container">
+    <div class="success-message" id="success-message"></div>
+    <div class="error-message" id="error-message"></div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="profiles">Billing Profiles</div>
+      <div class="tab" data-tab="settings">General Settings</div>
+      <div class="tab" data-tab="import-export">Import/Export</div>
+      <div class="tab" data-tab="about">About</div>
+    </div>
+
+    <!-- Billing Profiles Tab -->
+    <div class="tab-content active" id="profiles-tab">
+      <div class="card">
+        <div class="card-header">
+          <span>Your Saved Billing Profiles</span>
+          <button class="btn" id="add-profile-btn">Add New Profile</button>
+        </div>
+        <div class="card-body">
+          <ul class="profile-list" id="profile-list">
+            <li class="empty-state">Loading profiles...</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- General Settings Tab -->
+    <div class="tab-content" id="settings-tab">
+      <div class="card">
+        <div class="card-header">Global Settings</div>
+        <div class="card-body">
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="remember-toggle">
+              Remember extension state (ON/OFF) between browser sessions
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="auto-submit-order">
+              Automatically complete order (if unchecked, will stop before final submission)
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="add-random-delays">
+              Add random delays between actions (not recommended)
+            </label>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="debug-mode">
+              Enable Debug Mode (logs additional information to console)
+            </label>
+          </div>
+          
+          <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+          <h4>Target Account Credentials</h4>
+          <p style="margin-bottom: 16px; padding: 12px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; color: #856404;">
+            <strong>Auto-Login:</strong> Enter your Target account credentials below to enable automatic login during checkout. Your credentials are stored securely in your browser and never transmitted externally.
+          </p>
+          
+          <div class="form-group">
+            <label for="target-email">Target Email/Username</label>
+            <input type="email" id="target-email" placeholder="your.email@example.com" style="width: 300px;">
+          </div>
+          
+          <div class="form-group">
+            <label for="target-password">Target Password</label>
+            <input type="password" id="target-password" placeholder="Enter your Target password" style="width: 300px;">
+          </div>
+          
+          <div class="form-group">
+            <button class="btn btn-secondary" id="clear-credentials-btn">Clear Credentials</button>
+            <small style="color: #666; margin-left: 10px;">Remove saved Target credentials</small>
+          </div>
+          
+          <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+          <h4>Walmart Account Credentials</h4>
+          <p style="margin-bottom: 16px; padding: 12px; background-color: #e8f4ff; border-left: 4px solid #0071ce; border-radius: 4px; color: #004a87;">
+            <strong>Auto-Login:</strong> Enter your Walmart account credentials to enable automatic login during checkout. Stored locally in your browser only.
+          </p>
+
+          <div class="form-group">
+            <label for="walmart-email">Walmart Email/Username</label>
+            <input type="email" id="walmart-email" placeholder="your.email@example.com" style="width: 300px;">
+          </div>
+
+          <div class="form-group">
+            <label for="walmart-password">Walmart Password</label>
+            <input type="password" id="walmart-password" placeholder="Enter your Walmart password" style="width: 300px;">
+          </div>
+
+          <div class="form-group">
+            <button class="btn btn-secondary" id="clear-walmart-credentials-btn">Clear Walmart Credentials</button>
+            <small style="color: #666; margin-left: 10px;">Remove saved Walmart credentials</small>
+          </div>
+
+          <button class="btn" id="save-settings-btn">Save Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import/Export Tab -->
+    <div class="tab-content" id="import-export-tab">
+      <div class="card">
+        <div class="card-header">Import/Export Profiles</div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="export-data">Export Profiles (copy this text)</label>
+            <textarea id="export-data" readonly></textarea>
+          </div>
+          <button class="btn" id="copy-export-btn">Copy to Clipboard</button>
+
+          <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+
+          <div class="form-group">
+            <label for="import-data">Import Profiles (paste JSON below)</label>
+            <textarea id="import-data" placeholder='Paste JSON data here...'></textarea>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="replace-existing">
+              Replace all existing profiles (if unchecked, will merge)
+            </label>
+          </div>
+          <button class="btn" id="import-btn">Import Profiles</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- About Tab -->
+    <div class="tab-content" id="about-tab">
+      <div class="card">
+        <!-- VERSION NOTE: The card-header version is dynamically populated by options.js -->
+        <div class="card-header">About Polar Assist Bot <span class="version-display"></span></div>
+        <div class="card-body">
+          <p>This bot was made by yours truly, Botter Boy Nova: <a href="https://www.youtube.com/botterboynova" target="_blank">https://www.youtube.com/botterboynova</a></p>
+          <p>Guide on how to get Pokemon cards for retail: <a href="https://youtu.be/0MYkaqpK8Zc" target="_blank">https://youtu.be/0MYkaqpK8Zc</a></p>
+          <p>Join our free discord community! <a href="https://discord.gg/xcQVea3yMD" target="_blank">https://discord.gg/xcQVea3yMD</a></p>
+          <p>Join our paid discord community! <a href="https://whop.com/polarchefs/" target="_blank">https://whop.com/polarchefs/</a></p>
+          <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+          <h4>Disclaimer</h4>
+          <p>This bot is fully automated and designed for speed — once triggered, it will attempt to check out items as quickly as possible. By using this bot, you acknowledge that you are fully responsible for any purchases made, including accidental or unintended checkouts. All billing and shipping information is stored locally in your browser, and is never transmitted to us or stored externally.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Profile Modal -->
+  <div class="modal" id="profile-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span id="modal-title">Add New Profile</span>
+        <span class="close" id="close-modal">&times;</span>
+      </div>
+      <div class="modal-body">
+        <form id="profile-form">
+          <input type="hidden" id="profile-id">
+          <div class="form-group">
+            <label for="profile-name">Profile Name</label>
+            <input type="text" id="profile-name" placeholder="e.g., My Default Profile" required>
+          </div>
+
+          <div class="form-group">
+            <p style="margin-bottom: 16px; padding: 12px; background-color: #f0f8ff; border-left: 4px solid #2196F3; border-radius: 4px;">
+              <strong>Note:</strong> Address and email information will be taken directly from your Target account. Only payment information is required here.
+            </p>
+          </div>
+
+          <div class="form-group">
+            <h3>Payment Information</h3>
+            <div class="form-group">
+              <label for="card-number">Card Number</label>
+              <input type="text" id="card-number" inputmode="numeric" pattern="[0-9\s]{13,19}" autocomplete="cc-number" maxlength="19" placeholder="xxxx xxxx xxxx xxxx" required>
+            </div>
+            <div class="form-row">
+              <div class="form-col">
+                <label for="expiry-month">Expiry Month</label>
+                 <input type="text" id="expiry-month" inputmode="numeric" pattern="(0[1-9]|1[0-2])" maxlength="2" placeholder="MM" required>
+              </div>
+              <div class="form-col">
+                <label for="expiry-year">Expiry Year</label>
+                 <input type="text" id="expiry-year" inputmode="numeric" pattern="(20)\d{2}" maxlength="4" placeholder="YYYY" required>
+              </div>
+              <div class="form-col">
+                <label for="cvv">CVV</label>
+                <input type="text" id="cvv" inputmode="numeric" pattern="\d{3,4}" maxlength="4" placeholder="123" required>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancel-profile">Cancel</button>
+        <button class="btn" id="save-profile">Save Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- REMOVED type="module" -->
+  <script src="options.js"></script>
+</body>
+</html>
