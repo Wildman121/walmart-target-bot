@@ -79,6 +79,7 @@ if (window.location.pathname === '/cart') {
   let currentStep     = '';
   let observers       = [];
   let intervals       = [];
+  const ACTION_DELAY_MS = 1250;
   let placeOrderClicked   = false;
   let cvvConfirmClicked   = false;
   let cardVerifyClicked   = false;
@@ -219,12 +220,12 @@ if (window.location.pathname === '/cart') {
       case 'product':
         utils.updateStatus('Product page detected', 'status-waiting');
         setupProductPageObserver();
-        await utils.sleep(250);
+        await utils.sleep(ACTION_DELAY_MS);
         doAddToCart().catch(handleError);
         break;
       case 'checkout':
         utils.updateStatus('Starting checkout...', 'status-running');
-        await utils.sleep(300);
+        await utils.sleep(ACTION_DELAY_MS);
         runCheckout().catch(handleError);
         break;
       case 'login':
@@ -317,19 +318,16 @@ if (window.location.pathname === '/cart') {
     // continue to checkout instead of hard-refreshing.
     const confirmed = await waitForAddToCartResult(3000);
     if (confirmed === false) {
-      checkoutInProgress = false;
-      utils.updateStatus('Cart not confirmed — refreshing...', 'status-waiting');
-      window.location.reload();
-      return;
+      console.warn('[Walmart] Add-to-cart error state detected, attempting checkout anyway.');
     }
     if (confirmed === null) {
       console.log('[Walmart] Add-to-cart confirmation timed out, proceeding to checkout fallback.');
     }
 
     utils.updateStatus('Added to cart! Proceeding to checkout...', 'status-running');
-    await utils.sleep(400);
+    await utils.sleep(ACTION_DELAY_MS);
 
-    // Navigate to checkout
+    // Always move directly to checkout after add-to-cart attempt.
     window.location.href = 'https://www.walmart.com/checkout';
   }
 
@@ -342,7 +340,7 @@ if (window.location.pathname === '/cart') {
       const current = parseInt(qtyInput.value || '1', 10);
       for (let i = 0; i < qty - current; i++) {
         await utils.clickElement(incBtn, 'qty-increment');
-        await utils.sleep(150);
+        await utils.sleep(ACTION_DELAY_MS);
       }
       return;
     }
@@ -398,25 +396,25 @@ if (window.location.pathname === '/cart') {
         currentStep = 'fill-shipping';
         utils.updateStatus('Filling shipping info...', 'status-running');
         await fillShipping();
-        await utils.sleep(800);
+        await utils.sleep(ACTION_DELAY_MS);
         await continueFromShipping();
-        await utils.sleep(1000);
+        await utils.sleep(ACTION_DELAY_MS);
         await dismissPopups();
-        await utils.sleep(500);
+        await utils.sleep(ACTION_DELAY_MS);
         await fillPayment();
-        await utils.sleep(500);
+        await utils.sleep(ACTION_DELAY_MS);
         await placeOrder();
       } else if (step === 'payment') {
         currentStep = 'fill-payment';
         utils.updateStatus('Filling payment info...', 'status-running');
         await fillPayment();
-        await utils.sleep(500);
+        await utils.sleep(ACTION_DELAY_MS);
         await placeOrder();
       } else {
         // Generic fallback: try payment then place order
         await dismissPopups();
         await fillPayment();
-        await utils.sleep(500);
+        await utils.sleep(ACTION_DELAY_MS);
         await placeOrder();
       }
     } catch (e) {
@@ -433,7 +431,7 @@ if (window.location.pathname === '/cart') {
     while (Date.now() - start < maxWait) {
       const spinner = finder.findElementWithSelectors(spinnerSels);
       if (!spinner || !finder.isElementVisible(spinner)) break;
-      await utils.sleep(300);
+      await utils.sleep(ACTION_DELAY_MS);
     }
   }
 
@@ -453,13 +451,13 @@ if (window.location.pathname === '/cart') {
       const closeBtn = finder.findElementWithSelectors(popupSelectors.closeButton || []);
       if (closeBtn && finder.isElementVisible(closeBtn)) {
         await utils.clickElement(closeBtn, 'close-popup');
-        await utils.sleep(300);
+        await utils.sleep(ACTION_DELAY_MS);
       }
       // Continue button in modals (e.g., Walmart+ upsell)
       const contBtn = finder.findElementWithSelectors(popupSelectors.continueButton || []);
       if (contBtn && finder.isElementVisible(contBtn)) {
         await utils.clickElement(contBtn, 'continue-popup');
-        await utils.sleep(300);
+        await utils.sleep(ACTION_DELAY_MS);
       }
     } catch (e) {
       console.warn('[Walmart] dismissPopups error (non-fatal):', e);
@@ -473,28 +471,28 @@ if (window.location.pathname === '/cart') {
     if (!profile) throw new Error('No profile for shipping');
 
     await finder.fillFieldBySelectors(fields.firstName, profile.firstName);
-    await utils.sleep(100);
+    await utils.sleep(ACTION_DELAY_MS);
     await finder.fillFieldBySelectors(fields.lastName, profile.lastName);
-    await utils.sleep(100);
+    await utils.sleep(ACTION_DELAY_MS);
     await finder.fillFieldBySelectors(fields.address1, profile.address1);
-    await utils.sleep(100);
+    await utils.sleep(ACTION_DELAY_MS);
     if (profile.address2) {
       await finder.fillFieldBySelectors(fields.address2, profile.address2);
-      await utils.sleep(100);
+      await utils.sleep(ACTION_DELAY_MS);
     }
     await finder.fillFieldBySelectors(fields.city, profile.city);
-    await utils.sleep(100);
+    await utils.sleep(ACTION_DELAY_MS);
     await finder.fillFieldBySelectors(fields.state, profile.state);
-    await utils.sleep(100);
+    await utils.sleep(ACTION_DELAY_MS);
     await finder.fillFieldBySelectors(fields.zip, profile.zip);
-    await utils.sleep(100);
+    await utils.sleep(ACTION_DELAY_MS);
     if (profile.phone) {
       await finder.fillFieldBySelectors(fields.phone, profile.phone);
-      await utils.sleep(100);
+      await utils.sleep(ACTION_DELAY_MS);
     }
     if (profile.email) {
       await finder.fillFieldBySelectors(fields.email, profile.email);
-      await utils.sleep(100);
+      await utils.sleep(ACTION_DELAY_MS);
     }
   }
 
@@ -536,16 +534,16 @@ if (window.location.pathname === '/cart') {
     utils.updateStatus('Filling payment info...', 'status-running');
 
     await finder.fillFieldBySelectors(pf.cardNumber, cardNumber);
-    await utils.sleep(150);
+    await utils.sleep(ACTION_DELAY_MS);
     await finder.fillFieldBySelectors(pf.nameOnCard, nameOnCard);
-    await utils.sleep(150);
+    await utils.sleep(ACTION_DELAY_MS);
     await finder.fillFieldBySelectors(pf.expiryMonth, expMonth);
-    await utils.sleep(100);
+    await utils.sleep(ACTION_DELAY_MS);
     await finder.fillFieldBySelectors(pf.expiryYear, expYear);
-    await utils.sleep(100);
+    await utils.sleep(ACTION_DELAY_MS);
     if (cvv) {
       await finder.fillFieldBySelectors(pf.cvv, cvv);
-      await utils.sleep(100);
+      await utils.sleep(ACTION_DELAY_MS);
     }
   }
 
@@ -617,9 +615,9 @@ if (window.location.pathname === '/cart') {
       }
 
       await utils.fillField(emailInput, email, 'email');
-      await utils.sleep(200);
+      await utils.sleep(ACTION_DELAY_MS);
       await utils.fillField(passInput, pass, 'password');
-      await utils.sleep(200);
+      await utils.sleep(ACTION_DELAY_MS);
 
       if (finder.isElementVisible(signInBtn) && !finder.isElementDisabled(signInBtn)) {
         await utils.clickElement(signInBtn, 'sign-in');
