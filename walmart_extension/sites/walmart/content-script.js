@@ -391,23 +391,22 @@ if (window.location.pathname === '/cart') {
       throw new Error('Add to cart button not found after ' + maxAttempts + ' attempts');
     }
 
+    const initialCartCount = getCartCount();
+
     await utils.clickElement(btn, 'add-to-cart');
     utils.updateStatus('Waiting for cart confirmation...', 'status-running');
 
-    // Wait for modal/confirmation. If Walmart changes modal markup and we time out,
-    // avoid forcing checkout unless we have a positive add-to-cart signal.
-    const confirmed = await waitForAddToCartResult(3000);
-    if (confirmed === false) {
+    // Wait for add-to-cart confirmation signals. Treat only explicit ATC failures as errors.
+    const result = await waitForAddToCartResult(4500, { initialCartCount });
+    if (result.status === 'error') {
       checkoutInProgress = false;
       utils.updateStatus('Add to cart failed. Please retry on the product page.', 'status-waiting');
       console.warn('[Walmart] Add-to-cart error state detected; stopping before checkout redirect.');
       return;
     }
-    if (confirmed === null) {
-      checkoutInProgress = false;
-      utils.updateStatus('Cart confirmation unclear. Verify cart, then continue.', 'status-waiting');
-      console.log('[Walmart] Add-to-cart confirmation timed out; not redirecting to checkout.');
-      return;
+    if (result.status === 'unknown') {
+      console.log('[Walmart] Add-to-cart confirmation unclear; continuing with cart fallback flow.');
+      utils.updateStatus('Add-to-cart unclear, opening cart to verify...', 'status-running');
     }
 
     utils.updateStatus('Added to cart! Opening cart...', 'status-running');
@@ -458,16 +457,59 @@ if (window.location.pathname === '/cart') {
     }
   }
 
-  async function waitForAddToCartResult(timeout) {
+  function getCartCount() {
+    const countSelectors = [
+      '[data-testid="cart-badge"]',
+      '[data-automation-id="cart-item-count"]',
+      '[data-testid="header-cart-count"]',
+      '[data-testid="cart-count"]',
+      '[aria-label*="cart" i] [data-testid*="count" i]',
+      '[class*="cart"] [class*="count"]'
+    ];
+    for (const selector of countSelectors) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      const value = Number.parseInt((el.textContent || '').replace(/[^\d]/g, ''), 10);
+      if (Number.isFinite(value)) return value;
+    }
+    return 0;
+  }
+
+  function hasExplicitAddToCartError() {
+    const errorContainer = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.errorContainer || []);
+    if (!errorContainer || !finder.isElementVisible(errorContainer)) return false;
+    const text = (errorContainer.textContent || '').toLowerCase();
+    const atcErrorSnippets = [
+      'could not add',
+      'unable to add',
+      'out of stock',
+      'unavailable',
+      'try again',
+      'item limit',
+      'cannot be added'
+    ];
+    return atcErrorSnippets.some((snippet) => text.includes(snippet));
+  }
+
+  async function waitForAddToCartResult(timeout, { initialCartCount = 0 } = {}) {
     return new Promise(resolve => {
       const end = Date.now() + timeout;
       const check = () => {
         const modalEl = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.successContainer || []);
-        if (modalEl && finder.isElementVisible(modalEl)) { resolve(true); return; }
-        const errEl = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.errorContainer || []);
-        if (errEl && finder.isElementVisible(errEl)) { resolve(false); return; }
+        if (modalEl && finder.isElementVisible(modalEl)) { resolve({ status: 'success', signal: 'successContainer' }); return; }
+
+        const viewCartBtn = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.viewCartButton || []);
+        if (viewCartBtn && finder.isElementVisible(viewCartBtn)) { resolve({ status: 'success', signal: 'viewCartButton' }); return; }
+
+        const currentCartCount = getCartCount();
+        if (currentCartCount > initialCartCount) { resolve({ status: 'success', signal: 'cartCountIncrement' }); return; }
+
+        if (window.location.pathname === '/cart') { resolve({ status: 'success', signal: 'cartPath' }); return; }
+
+        if (hasExplicitAddToCartError()) { resolve({ status: 'error', signal: 'explicitError' }); return; }
+
         if (Date.now() < end) setTimeout(check, 150);
-        else resolve(null); // timeout — uncertain
+        else resolve({ status: 'unknown', signal: 'timeout' });
       };
       check();
     });
@@ -772,3 +814,4 @@ if (window.location.pathname === '/cart') {
 
 
 }
+
