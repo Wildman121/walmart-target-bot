@@ -350,13 +350,19 @@ if (window.location.pathname === '/cart') {
     utils.updateStatus('Waiting for cart confirmation...', 'status-running');
 
     // Wait for modal/confirmation. If Walmart changes modal markup and we time out,
-    // continue to checkout instead of hard-refreshing.
+    // avoid forcing checkout unless we have a positive add-to-cart signal.
     const confirmed = await waitForAddToCartResult(3000);
     if (confirmed === false) {
-      console.warn('[Walmart] Add-to-cart error state detected, attempting checkout anyway.');
+      checkoutInProgress = false;
+      utils.updateStatus('Add to cart failed. Please retry on the product page.', 'status-waiting');
+      console.warn('[Walmart] Add-to-cart error state detected; stopping before checkout redirect.');
+      return;
     }
     if (confirmed === null) {
-      console.log('[Walmart] Add-to-cart confirmation timed out, proceeding to checkout fallback.');
+      checkoutInProgress = false;
+      utils.updateStatus('Cart confirmation unclear. Verify cart, then continue.', 'status-waiting');
+      console.log('[Walmart] Add-to-cart confirmation timed out; not redirecting to checkout.');
+      return;
     }
 
     utils.updateStatus('Added to cart! Proceeding to checkout...', 'status-running');
