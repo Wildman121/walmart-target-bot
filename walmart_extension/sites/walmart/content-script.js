@@ -300,9 +300,11 @@ if (window.location.pathname === '/cart') {
 
   // ── Page type detection ───────────────────────────────────────────────────
   function detectCurrentPageType() {
-    if (window.location.href.startsWith('https://www.walmart.com/ip/')) return 'product';
-
     const path = window.location.pathname || '';
+    const host = (window.location.hostname || '').toLowerCase();
+    const isWalmartHost = host === 'www.walmart.com' || host === 'walmart.com';
+    if (isWalmartHost && path.startsWith('/ip/')) return 'product';
+
     if (path.startsWith('/checkout')) return 'checkout';
     if (path === '/cart')             return 'cart';
     if (window.location.pathname.includes('/login')) return 'login';
@@ -428,18 +430,6 @@ if (window.location.pathname === '/cart') {
 
     const qty = siteSettings.quantity || 1;
 
-    const buyNowBtn = finder.findElementWithSelectors(productPageSelectors.buyNow || []);
-    if (buyNowBtn && finder.isElementVisible(buyNowBtn) && !finder.isElementDisabled(buyNowBtn)) {
-      utils.updateStatus('Using Buy Now...', 'status-running');
-      await utils.clickElement(buyNowBtn, 'buy-now');
-      checkoutInProgress = false;
-      if (qty > 1) {
-        await utils.sleep(ACTION_DELAY_MS);
-        window.location.href = 'https://www.walmart.com/cart';
-      }
-      return;
-    }
-
     if (qty > 1) await setQuantity(qty);
 
     const maxAttempts = 10;
@@ -453,6 +443,14 @@ if (window.location.pathname === '/cart') {
     }
 
     if (!btn) {
+      const buyNowBtn = finder.findElementWithSelectors(productPageSelectors.buyNow || []);
+      if (buyNowBtn && finder.isElementVisible(buyNowBtn) && !finder.isElementDisabled(buyNowBtn)) {
+        utils.updateStatus('Add to cart unavailable. Using Buy Now...', 'status-running');
+        await utils.clickElement(buyNowBtn, 'buy-now');
+        checkoutInProgress = false;
+        return;
+      }
+
       checkoutInProgress = false;
       throw new Error('Add to cart button not found after ' + maxAttempts + ' attempts');
     }
@@ -878,6 +876,9 @@ if (window.location.pathname === '/cart') {
 
 /* WALMART PRODUCT->CART->CHECKOUT->PLACE ORDER HOTFIX */
 (() => {
+  // The primary Walmart automation above already handles product/cart/checkout.
+  // Running this legacy hotfix in parallel can cause duplicate clicks and race conditions.
+  if (window.walmartContentScriptExecuted) return;
   if (window.__walmartCartCheckoutHotfixAppliedV2) return;
   window.__walmartCartCheckoutHotfixAppliedV2 = true;
 
@@ -910,13 +911,89 @@ if (window.location.pathname === '/cart') {
     return false;
   };
 
+  const readSelectedQuantity = async () => {
+    const parseQty = (value) => {
+      const parsed = Number.parseInt(String(value ?? ''), 10);
+      return Number.isFinite(parsed) ? Math.min(5, Math.max(1, parsed)) : null;
+    };
+
+    try {
+      if (typeof chrome !== 'undefined' && chrome?.storage?.local?.get) {
+        const data = await chrome.storage.local.get(['siteSettings']);
+        const qty = parseQty(data?.siteSettings?.walmart?.quantity);
+        if (qty) return qty;
+      }
+    } catch (error) {
+      console.warn('[Walmart Hotfix] Could not read selected quantity from storage:', error);
+    }
+
+    return 1;
+  };
+
+  const setProductQuantity = async (targetQty) => {
+    if (targetQty <= 1) return;
+
+    const dropdown = [
+      'select[data-testid="quantity-select"]',
+      'select[name="quantity"]',
+      'select[aria-label*="Quantity"]'
+    ].map((selector) => document.querySelector(selector)).find(Boolean);
+
+    if (dropdown) {
+      const option = Array.from(dropdown.options || []).find((opt) => (
+        Number.parseInt(opt.value, 10) === targetQty ||
+        Number.parseInt((opt.textContent || '').trim(), 10) === targetQty
+      ));
+      if (option) {
+        dropdown.value = option.value;
+        dropdown.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(250);
+        return;
+      }
+    }
+
+    const incrementBtn = [
+      '[data-testid="quantity-increment-btn"]',
+      'button[data-testid*="quantity-increment"]',
+      'button[data-automation-id*="quantity-increase"]',
+      'button[aria-label*="Increase quantity"]'
+    ].map((selector) => document.querySelector(selector)).find((el) => isVisible(el));
+
+    const quantityInput = [
+      '[data-testid="quantity-input"]',
+      'input[data-testid*="quantity"]',
+      'input[aria-label*="Quantity"]'
+    ].map((selector) => document.querySelector(selector)).find(Boolean);
+
+    if (!incrementBtn || !quantityInput) return;
+
+    const readCurrentQty = () => {
+      const raw = quantityInput.value || quantityInput.getAttribute('value') || quantityInput.textContent || '1';
+      const parsed = Number.parseInt(String(raw).trim(), 10);
+      return Number.isFinite(parsed) ? parsed : 1;
+    };
+
+    let currentQty = readCurrentQty();
+    while (currentQty < targetQty) {
+      if (!clickElement(incrementBtn)) break;
+      await sleep(250);
+      currentQty = readCurrentQty();
+    }
+  };
+
   const runProductFlow = async () => {
+    const selectedQty = await readSelectedQuantity();
+    await setProductQuantity(selectedQty);
+
     const clickedAddToCart =
       clickBySelectors([
         '[data-automation-id="atc-button"]',
         'button[data-testid="ip-add-to-cart-btn"]',
         'button[data-testid="add-to-cart-btn"]',
-        '#btn-atc'
+        '#btn-atc',
+        '.WMButton[data-tl-id="atc-button"]',
+        'button[aria-label*="Add to cart"]',
+        'button[aria-label*="Add to Cart"]'
       ]) || clickByText(['add to cart']);
 
     if (!clickedAddToCart) return;
@@ -965,12 +1042,40 @@ if (window.location.pathname === '/cart') {
     for (let attempt = 0; attempt < 40; attempt += 1) {
       if (
         clickBySelectors([
+          'button[data-testid="shipping-continue-btn"]',
+          'button[data-automation-id="shipping-continue-cta"]',
+          'button[data-testid="save-and-continue-btn"]',
+          'button[aria-label*="Continue to payment"]',
+          'button[aria-label*="Save and continue"]',
+          'button[aria-label*="Continue checkout"]',
+          'button[data-testid="continue-button"]'
+        ]) ||
+        clickByText(['continue to payment', 'save and continue', 'continue checkout', 'continue'])
+      ) {
+        await sleep(700);
+        continue;
+      }
+
+      const termsCheckbox = [
+        'input[data-testid="terms-checkbox"]',
+        'input[id="terms-and-conditions"]',
+        'input[name="terms"]'
+      ].map((selector) => document.querySelector(selector)).find(Boolean);
+
+      if (termsCheckbox && !termsCheckbox.checked && !termsCheckbox.disabled) {
+        termsCheckbox.click();
+        await sleep(300);
+      }
+
+      if (
+        clickBySelectors([
           'button[data-testid="place-order-btn"]',
           'button[data-automation-id="place-order-btn"]',
           'button[aria-label*="Place order"]',
+          'button[aria-label*="Review order"]',
           '#place-order-btn'
         ]) ||
-        clickByText(['place order'])
+        clickByText(['place order', 'review order'])
       ) {
         return;
       }
@@ -983,7 +1088,7 @@ if (window.location.pathname === '/cart') {
     runCheckoutFlow();
   } else if (path === '/cart') {
     runCartFlow();
-  } else if (window.location.href.startsWith('https://www.walmart.com/ip/')) {
+  } else if (path.startsWith('/ip/')) {
     runProductFlow();
   }
 })();
