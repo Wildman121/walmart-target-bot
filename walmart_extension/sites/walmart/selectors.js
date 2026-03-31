@@ -18,6 +18,13 @@ const walmartProductPageSelectors = {
     '#btn-atc',
     '.WMButton[data-tl-id="atc-button"]'
   ],
+  buyNow: [
+    'button[data-testid="buy-now-btn"]',
+    'button[data-automation-id="buy-now-button"]',
+    'button[aria-label*="Buy now"]',
+    'button[aria-label*="Buy Now"]',
+    'button[data-testid="ip-buy-now-btn"]'
+  ],
   addToCartResult: {
     successContainer: [
       '[data-testid="cart-added-modal"]',
