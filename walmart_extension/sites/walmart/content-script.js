@@ -402,11 +402,16 @@ if (window.location.pathname === '/cart') {
       return;
     }
 
-    utils.updateStatus('Added to cart! Proceeding to checkout...', 'status-running');
+    utils.updateStatus('Added to cart! Opening cart...', 'status-running');
     await utils.sleep(ACTION_DELAY_MS);
 
-    // Always move directly to checkout after add-to-cart attempt.
-    window.location.href = 'https://www.walmart.com/checkout';
+    // Follow the requested flow: product -> cart -> checkout.
+    const viewCartBtn = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.viewCartButton || []);
+    if (viewCartBtn && finder.isElementVisible(viewCartBtn)) {
+      await utils.clickElement(viewCartBtn, 'view-cart');
+    } else {
+      window.location.href = 'https://www.walmart.com/cart';
+    }
   }
 
   async function setQuantity(qty) {
