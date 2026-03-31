@@ -417,7 +417,7 @@ if (window.location.pathname === '/cart') {
 
     // Wait for modal/confirmation. If Walmart changes modal markup and we time out,
     // avoid forcing checkout unless we have a positive add-to-cart signal.
-    const confirmed = await waitForAddToCartResult(3000);
+    const confirmed = await waitForAddToCartResult(7000);
     if (confirmed === false) {
       checkoutInProgress = false;
       utils.updateStatus('Add to cart failed. Please retry on the product page.', 'status-waiting');
@@ -469,14 +469,38 @@ if (window.location.pathname === '/cart') {
     }
   }
 
+  function hasAddToCartFailureText() {
+    const failureSnippets = [
+      'out of stock',
+      'not available',
+      'unable to add',
+      'could not add',
+      'failed to add',
+      'try again'
+    ];
+    const bodyText = (document.body?.innerText || '').toLowerCase();
+    return failureSnippets.some(snippet => bodyText.includes(snippet));
+  }
+
   async function waitForAddToCartResult(timeout) {
     return new Promise(resolve => {
       const end = Date.now() + timeout;
+      const initialCartCountText = (document.querySelector('[data-testid="cart-item-count"], [data-automation-id="cart-item-count"]')?.textContent || '').trim();
       const check = () => {
+        if (window.location.pathname === '/cart') { resolve(true); return; }
+
+        const viewCartBtn = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.viewCartButton || []);
+        if (viewCartBtn && finder.isElementVisible(viewCartBtn)) { resolve(true); return; }
+
         const modalEl = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.successContainer || []);
         if (modalEl && finder.isElementVisible(modalEl)) { resolve(true); return; }
+
         const errEl = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.errorContainer || []);
-        if (errEl && finder.isElementVisible(errEl)) { resolve(false); return; }
+        if (errEl && finder.isElementVisible(errEl) && hasAddToCartFailureText()) { resolve(false); return; }
+
+        const latestCartCountText = (document.querySelector('[data-testid="cart-item-count"], [data-automation-id="cart-item-count"]')?.textContent || '').trim();
+        if (latestCartCountText && latestCartCountText !== initialCartCountText) { resolve(true); return; }
+
         if (Date.now() < end) setTimeout(check, 150);
         else resolve(null); // timeout — uncertain
       };
