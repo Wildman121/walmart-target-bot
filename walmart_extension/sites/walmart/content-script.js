@@ -317,10 +317,7 @@ if (window.location.pathname === '/cart') {
     // continue to checkout instead of hard-refreshing.
     const confirmed = await waitForAddToCartResult(3000);
     if (confirmed === false) {
-      checkoutInProgress = false;
-      utils.updateStatus('Cart not confirmed — refreshing...', 'status-waiting');
-      window.location.reload();
-      return;
+      console.warn('[Walmart] Add-to-cart error state detected, attempting checkout anyway.');
     }
     if (confirmed === null) {
       console.log('[Walmart] Add-to-cart confirmation timed out, proceeding to checkout fallback.');
@@ -329,7 +326,7 @@ if (window.location.pathname === '/cart') {
     utils.updateStatus('Added to cart! Proceeding to checkout...', 'status-running');
     await utils.sleep(400);
 
-    // Navigate to checkout
+    // Always move directly to checkout after add-to-cart attempt.
     window.location.href = 'https://www.walmart.com/checkout';
   }
 
