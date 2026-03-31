@@ -49,6 +49,20 @@ if (window.location.pathname === '/cart') {
           return;
         }
 
+        const textButtons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+        const continueByText = textButtons.find(el => {
+          const txt = (el.textContent || '').trim().toLowerCase();
+          const visible = el.offsetParent !== null;
+          const disabled = el.disabled || el.getAttribute('aria-disabled') === 'true';
+          return visible && !disabled && (txt.includes('continue to checkout') || txt === 'checkout');
+        });
+        if (continueByText) {
+          console.log('[Walmart Cart] Continue to checkout button found by text, clicking.');
+          continueByText.click();
+          await chrome.storage.local.set({ cartCloseAttempted: true });
+          return;
+        }
+
         console.warn('[Walmart Cart] Continue to checkout button not found.');
       }
 
@@ -122,6 +136,18 @@ if (window.location.pathname === '/cart') {
   let cvvConfirmClicked   = false;
   let cardVerifyClicked   = false;
   let antiBotDetected     = false;
+
+  function clickVisibleButtonByText(textCandidates, actionName) {
+    const candidates = Array.isArray(textCandidates) ? textCandidates : [textCandidates];
+    for (const text of candidates) {
+      if (!text) continue;
+      const btn = finder.findButtonByText(String(text), ['button', 'a', '[role="button"]']);
+      if (btn && finder.isElementVisible(btn) && !finder.isElementDisabled(btn)) {
+        return utils.clickElement(btn, actionName || 'click-by-text').then(() => true);
+      }
+    }
+    return Promise.resolve(false);
+  }
 
   // ── Message listener ──────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -383,12 +409,15 @@ if (window.location.pathname === '/cart') {
       throw new Error('Add to cart button not found after ' + maxAttempts + ' attempts');
     }
 
-    await utils.clickElement(btn, 'add-to-cart');
+    const clickedAddToCartByText = await clickVisibleButtonByText(['add to cart'], 'add-to-cart');
+    if (!clickedAddToCartByText) {
+      await utils.clickElement(btn, 'add-to-cart');
+    }
     utils.updateStatus('Waiting for cart confirmation...', 'status-running');
 
     // Wait for modal/confirmation. If Walmart changes modal markup and we time out,
     // avoid forcing checkout unless we have a positive add-to-cart signal.
-    const confirmed = await waitForAddToCartResult(3000);
+    const confirmed = await waitForAddToCartResult(7000);
     if (confirmed === false) {
       checkoutInProgress = false;
       utils.updateStatus('Add to cart failed. Please retry on the product page.', 'status-waiting');
@@ -406,6 +435,9 @@ if (window.location.pathname === '/cart') {
     await utils.sleep(ACTION_DELAY_MS);
 
     // Follow the requested flow: product -> cart -> checkout.
+    const clickedViewCartByText = await clickVisibleButtonByText(['view cart'], 'view-cart');
+    if (clickedViewCartByText) return;
+
     const viewCartBtn = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.viewCartButton || []);
     if (viewCartBtn && finder.isElementVisible(viewCartBtn)) {
       await utils.clickElement(viewCartBtn, 'view-cart');
@@ -437,14 +469,38 @@ if (window.location.pathname === '/cart') {
     }
   }
 
+  function hasAddToCartFailureText() {
+    const failureSnippets = [
+      'out of stock',
+      'not available',
+      'unable to add',
+      'could not add',
+      'failed to add',
+      'try again'
+    ];
+    const bodyText = (document.body?.innerText || '').toLowerCase();
+    return failureSnippets.some(snippet => bodyText.includes(snippet));
+  }
+
   async function waitForAddToCartResult(timeout) {
     return new Promise(resolve => {
       const end = Date.now() + timeout;
+      const initialCartCountText = (document.querySelector('[data-testid="cart-item-count"], [data-automation-id="cart-item-count"]')?.textContent || '').trim();
       const check = () => {
+        if (window.location.pathname === '/cart') { resolve(true); return; }
+
+        const viewCartBtn = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.viewCartButton || []);
+        if (viewCartBtn && finder.isElementVisible(viewCartBtn)) { resolve(true); return; }
+
         const modalEl = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.successContainer || []);
         if (modalEl && finder.isElementVisible(modalEl)) { resolve(true); return; }
+
         const errEl = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.errorContainer || []);
-        if (errEl && finder.isElementVisible(errEl)) { resolve(false); return; }
+        if (errEl && finder.isElementVisible(errEl) && hasAddToCartFailureText()) { resolve(false); return; }
+
+        const latestCartCountText = (document.querySelector('[data-testid="cart-item-count"], [data-automation-id="cart-item-count"]')?.textContent || '').trim();
+        if (latestCartCountText && latestCartCountText !== initialCartCountText) { resolve(true); return; }
+
         if (Date.now() < end) setTimeout(check, 150);
         else resolve(null); // timeout — uncertain
       };
@@ -666,6 +722,17 @@ if (window.location.pathname === '/cart') {
     }
 
     utils.updateStatus('Placing order...', 'status-running');
+    const clickedPlaceOrderByText = await clickVisibleButtonByText(
+      ['place order for', 'place order'],
+      'place-order'
+    );
+    if (clickedPlaceOrderByText) {
+      placeOrderClicked = true;
+      utils.updateStatus('Order submitted!', 'status-complete');
+      console.log('[Walmart] Place order clicked by text.');
+      return;
+    }
+
     const btnSels = checkoutPageSelectors.placeOrderButtonSelectors || [checkoutPageSelectors.placeOrderButton];
     const btn = finder.findElementWithSelectors(btnSels);
 
