@@ -5,17 +5,54 @@ console.log('[Walmart] Starting execution.');
 console.log('[Walmart] Build marker:', 'walmart-content-3.75');
 
 if (window.location.pathname === '/cart') {
-  // Cart page — handle auto-close logic
-  (async function handleCartPageClose() {
+  // Cart page — continue to checkout, then optional auto-close logic.
+  (async function handleCartPageActions() {
     try {
       const flagData = await chrome.storage.local.get(['cartCloseAttempted']);
       if (flagData.cartCloseAttempted) {
         console.log('[Walmart Cart] Close already attempted, skipping.');
-        return;
       }
-      await chrome.storage.local.set({ cartCloseAttempted: true });
-      const stored = await chrome.storage.session.get(['globalSettings']);
+
+      const stored = await chrome.storage.local.get(['globalSettings', 'siteSettings']);
       const globalSettings = stored.globalSettings || {};
+      const siteSettings = stored.siteSettings?.walmart || {};
+      const isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
+
+      if (isEnabled) {
+        const continueSelectors = (window.walmartSelectors?.cartPageSelectors?.continueToCheckoutButton) || [
+          'button[data-automation-id="cart-continue-checkout"]',
+          'button[data-testid="continue-to-checkout-button"]',
+          'button[data-testid="checkout-button"]',
+          'button[aria-label*="Continue to checkout"]',
+          'button[aria-label*="Checkout"]',
+          'a[href*="/checkout"]'
+        ];
+
+        let continueBtn = null;
+        for (const sel of continueSelectors) {
+          const el = document.querySelector(sel);
+          if (el && el.offsetParent !== null && !el.disabled) {
+            continueBtn = el;
+            break;
+          }
+        }
+
+        if (continueBtn) {
+          console.log('[Walmart Cart] Continue to checkout button found, clicking.');
+          continueBtn.click();
+          await chrome.storage.local.set({ cartCloseAttempted: true });
+          if (globalSettings.autoCloseCartPage === true) {
+            setTimeout(() => {
+              try { window.close(); } catch (e) { console.warn('[Walmart Cart] Failed close after continue click:', e); }
+            }, 1500);
+          }
+          return;
+        }
+
+        console.warn('[Walmart Cart] Continue to checkout button not found.');
+      }
+
+      await chrome.storage.local.set({ cartCloseAttempted: true });
       if (globalSettings.autoCloseCartPage === true) {
         console.log('[Walmart Cart] Auto-close enabled, closing tab.');
         window.close();

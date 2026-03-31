@@ -230,6 +230,17 @@ const walmartPopupSelectors = {
   ]
 };
 
+const walmartCartPageSelectors = {
+  continueToCheckoutButton: [
+    'button[data-automation-id="cart-continue-checkout"]',
+    'button[data-testid="continue-to-checkout-button"]',
+    'button[data-testid="checkout-button"]',
+    'button[aria-label*="Continue to checkout"]',
+    'button[aria-label*="Checkout"]',
+    'a[href*="/checkout"]'
+  ]
+};
+
 const walmartLoginPageSelectors = {
   loginForm: [
     'form[data-testid="sign-in-form"]',
@@ -288,6 +299,7 @@ const walmartAntiBotSelectors = {
 
 window.walmartSelectors = {
   productPageSelectors: walmartProductPageSelectors,
+  cartPageSelectors: walmartCartPageSelectors,
   checkoutPageSelectors: walmartCheckoutPageSelectors,
   popupSelectors: walmartPopupSelectors,
   loginPageSelectors: walmartLoginPageSelectors,
