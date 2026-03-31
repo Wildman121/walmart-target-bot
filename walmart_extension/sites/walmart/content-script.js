@@ -462,15 +462,51 @@ if (window.location.pathname === '/cart') {
     return new Promise(resolve => {
       const end = Date.now() + timeout;
       const check = () => {
-        const modalEl = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.successContainer || []);
-        if (modalEl && finder.isElementVisible(modalEl)) { resolve(true); return; }
-        const errEl = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.errorContainer || []);
-        if (errEl && finder.isElementVisible(errEl)) { resolve(false); return; }
+        if (isPositiveAddToCartSignal()) { resolve(true); return; }
+        if (hasBlockingAddToCartError()) { resolve(false); return; }
         if (Date.now() < end) setTimeout(check, 150);
         else resolve(null); // timeout — uncertain
       };
       check();
     });
+  }
+
+  function isPositiveAddToCartSignal() {
+    const modalEl = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.successContainer || []);
+    if (modalEl && finder.isElementVisible(modalEl)) return true;
+
+    const viewCartBtn = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.viewCartButton || []);
+    if (viewCartBtn && finder.isElementVisible(viewCartBtn)) return true;
+
+    if (window.location.pathname === '/cart') return true;
+    return false;
+  }
+
+  function hasBlockingAddToCartError() {
+    const errorCandidates = productPageSelectors.addToCartResult?.errorContainer || [];
+    const errorTextSignals = [
+      'out of stock',
+      'sold out',
+      'not available',
+      'cannot be added',
+      'can’t be added',
+      'could not add',
+      'unable to add',
+      'try again',
+      'quantity limit',
+      'something went wrong'
+    ];
+
+    for (const selector of errorCandidates) {
+      const nodes = Array.from(document.querySelectorAll(selector));
+      for (const node of nodes) {
+        if (!finder.isElementVisible(node)) continue;
+        const text = (node.textContent || '').trim().toLowerCase();
+        if (!text) continue;
+        if (errorTextSignals.some(signal => text.includes(signal))) return true;
+      }
+    }
+    return false;
   }
 
   // ── Full checkout flow ───────────────────────────────────────────────────
