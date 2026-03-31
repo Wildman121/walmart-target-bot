@@ -2,7 +2,7 @@
 (() => {
   'use strict';
 
-  const WALMART_HANDLER_BUILD = 'walmart-handler-3.75-modular';
+  const WALMART_HANDLER_BUILD = 'walmart-handler-3.75';
   const WALMART_SCRIPTS = [
     'common/utils.js',
     'common/element-finder.js',
@@ -40,21 +40,13 @@
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete') return;
     if (!tab || !tab.url || !isWalmartUrl(tab.url)) return;
-
-    const onProductPage = isDirectWalmartProductPage(tab.url);
-    const onCartPage = tab.url.startsWith('https://www.walmart.com/cart');
-    if (!onProductPage && !onCartPage) return;
+    if (!isDirectWalmartProductPage(tab.url)) return;
 
     const settingsData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
     const walmartSettings = (settingsData.siteSettings || {}).walmart || {};
     const globalEnabled = (settingsData.globalSettings || {}).enabled !== false;
     const walmartEnabled = walmartSettings.enabled === true;
     if (!globalEnabled || !walmartEnabled) return;
-
-    if (onCartPage) {
-      chrome.tabs.update(tabId, { url: 'https://www.walmart.com/checkout' });
-      return;
-    }
 
     try {
       await injectWalmartScripts(tabId);
@@ -69,6 +61,5 @@
     }
   });
 
-  console.log('[Walmart BG module] Active.', WALMART_HANDLER_BUILD);
+  console.log('[Walmart BG module] Minimal product-page-only handler active.', WALMART_HANDLER_BUILD);
 })();
-
