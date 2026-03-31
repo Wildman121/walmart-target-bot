@@ -870,8 +870,20 @@ if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
   // ── Init ──────────────────────────────────────────────────────────────────
   console.log('[Walmart] Content script initialised. URL:', window.location.href);
   console.log('[Walmart] Message listeners ready.');
-  
 
+  // Bootstrap automation on initial page load so Walmart flow runs even if
+  // background page-detection messaging is delayed or unavailable.
+  (async () => {
+    try {
+      await loadSettingsAndStart();
+      const pageType = detectCurrentPageType();
+      if (pageType !== 'cart') {
+        await handlePageType(pageType);
+      }
+    } catch (error) {
+      console.error('[Walmart] Initial bootstrap failed:', error);
+    }
+  })();
 
 }
 
