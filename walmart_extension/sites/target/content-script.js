@@ -6,87 +6,215 @@ const _0x108d00=_0x34cb;(function(_0x24535e,_0x4116ed){const _0x38bce7=_0x34cb,_
   window.__targetCartCheckoutHotfixApplied = true;
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
   const isVisible = (el) => !!el && !el.disabled && el.offsetParent !== null;
+
+  const clickElement = (el) => {
+    if (!isVisible(el)) return false;
+    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    el.click();
+    return true;
+  };
 
   const clickFirstVisible = (selectors) => {
     for (const selector of selectors) {
       const el = document.querySelector(selector);
-      if (isVisible(el)) {
-        el.click();
-        return true;
-      }
+      if (clickElement(el)) return true;
     }
     return false;
   };
 
   const clickButtonByText = (texts) => {
-    const buttons = Array.from(document.querySelectorAll('button, a'));
+    const buttons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
     for (const button of buttons) {
       const text = (button.textContent || '').trim().toLowerCase();
       if (!text) continue;
-      if (texts.some((t) => text.includes(t)) && isVisible(button)) {
-        button.click();
+      if (texts.some((t) => text.includes(t)) && clickElement(button)) {
         return true;
       }
     }
     return false;
   };
 
-  async function handleProductPageCartIconFlow() {
-    const addedIndicators = [
-      'Added to cart',
-      'added to your cart',
-      'item added',
-      'View cart'
+  const getRequestedQuantity = async () => {
+    const parseQty = (value) => {
+      const n = Number.parseInt(String(value ?? ''), 10);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+
+    const localCandidates = [
+      window.sessionStorage?.getItem('target_module_quantity'),
+      window.localStorage?.getItem('target_module_quantity'),
+      window.sessionStorage?.getItem('quantity'),
+      window.localStorage?.getItem('quantity')
     ];
 
+    for (const candidate of localCandidates) {
+      const parsed = parseQty(candidate);
+      if (parsed) return parsed;
+    }
+
+    if (typeof chrome !== 'undefined' && chrome?.storage?.local?.get) {
+      try {
+        const data = await chrome.storage.local.get(['target_module_settings', 'target_module_quantity', 'quantity']);
+        const nested = data?.target_module_settings?.target?.quantity;
+        const candidates = [nested, data?.target_module_quantity, data?.quantity];
+        for (const candidate of candidates) {
+          const parsed = parseQty(candidate);
+          if (parsed) return parsed;
+        }
+      } catch (err) {
+        console.warn('[Target Hotfix] Failed to read chrome storage quantity.', err);
+      }
+    }
+
+    return 1;
+  };
+
+  const setQuantityOnProductPage = async (requestedQty) => {
+    const qty = clamp(requestedQty, 1, 20);
+    if (qty <= 1) return true;
+
+    const stepperIncSelectors = [
+      'button[data-test="stepperIncrement"]',
+      '[data-test="stepperIncrement"]',
+      '[data-test="qty-inc"]',
+      'button[aria-label*="increase quantity" i]',
+      'button[aria-label*="increment" i]'
+    ];
+
+    const stepperValueSelectors = [
+      '[data-test="stepperValue"]',
+      '[data-test*="quantity" i] [aria-live]',
+      '[aria-label*="quantity" i]'
+    ];
+
+    const dropdownSelectors = [
+      'select[data-test="quantitySelect"]',
+      'select[aria-label*="quantity" i]',
+      'select[name*="quantity" i]'
+    ];
+
+    const dropdown = dropdownSelectors.map((s) => document.querySelector(s)).find(Boolean);
+    if (dropdown) {
+      const option = Array.from(dropdown.options).find((opt) => Number.parseInt(opt.value, 10) === qty || Number.parseInt(opt.textContent || '', 10) === qty);
+      if (option) {
+        dropdown.value = option.value;
+        dropdown.dispatchEvent(new Event('change', { bubbles: true }));
+        console.log(`[Target Hotfix] Quantity set via dropdown: ${qty}`);
+        await sleep(250);
+        return true;
+      }
+    }
+
+    const readStepperValue = () => {
+      for (const selector of stepperValueSelectors) {
+        const el = document.querySelector(selector);
+        if (!el) continue;
+        const n = Number.parseInt((el.textContent || el.getAttribute('value') || '').trim(), 10);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      return 1;
+    };
+
+    const increment = stepperIncSelectors.map((s) => document.querySelector(s)).find((el) => isVisible(el));
+    if (!increment) {
+      console.warn('[Target Hotfix] Could not find quantity controls. Continuing with default quantity.');
+      return false;
+    }
+
+    let current = readStepperValue();
+    while (current < qty) {
+      if (!clickElement(increment)) break;
+      await sleep(300);
+      current = readStepperValue();
+      if (current >= qty) break;
+    }
+
+    console.log(`[Target Hotfix] Quantity target=${qty}, current=${current}`);
+    return current >= qty;
+  };
+
+  const clickAddToCart = async () => {
+    const addSelectors = [
+      'button[data-test="addToCartButton"]',
+      'button[id^="addToCartButtonOrTextIdFor"]',
+      'button[data-test="preorderButton"]'
+    ];
+
+    if (clickFirstVisible(addSelectors) || clickButtonByText(['add to cart', 'preorder', 'pre-order'])) {
+      console.log('[Target Hotfix] Clicked Add to cart.');
+      return true;
+    }
+
+    console.warn('[Target Hotfix] Add to cart button not found.');
+    return false;
+  };
+
+  async function goToCartAfterAdd() {
     const cartIconSelectors = [
       'a[href*="/cart"]',
       'button[aria-label*="cart" i]',
       '[data-test*="cart" i] a[href*="/cart"]',
-      '[data-test*="cart" i] button'
+      '[data-test*="cart" i] button',
+      '[data-test="errorContent-viewCartButton"]'
     ];
 
-    let attempts = 0;
-    while (attempts < 30) {
-      const bodyText = (document.body?.innerText || '').toLowerCase();
-      const added = addedIndicators.some((s) => bodyText.includes(s.toLowerCase()));
-
-      if (added) {
-        if (clickFirstVisible(cartIconSelectors) || clickButtonByText(['view cart', 'cart'])) {
-          console.log('[Target Hotfix] Added-to-cart detected. Clicked cart icon/link.');
-          return;
-        }
+    for (let i = 0; i < 40; i += 1) {
+      if (clickButtonByText(['view cart']) || clickFirstVisible(cartIconSelectors)) {
+        console.log('[Target Hotfix] Clicked View cart/cart icon.');
+        return true;
       }
+      await sleep(300);
+    }
 
-      attempts += 1;
-      await sleep(500);
+    return false;
+  }
+
+  async function handleProductPageFlow() {
+    const qty = await getRequestedQuantity();
+    console.log(`[Target Hotfix] Requested quantity: ${qty}`);
+
+    await setQuantityOnProductPage(qty);
+
+    const addClicked = await clickAddToCart();
+    if (!addClicked) return;
+
+    const cartOpened = await goToCartAfterAdd();
+    if (!cartOpened) {
+      console.warn('[Target Hotfix] Could not find View cart/cart icon after adding item.');
     }
   }
 
   async function handleCartContinueToCheckout() {
-    await sleep(800);
-    const selectors = [
-      'button[data-test*="continue" i]',
-      'button[aria-label*="continue to checkout" i]',
-      'button[aria-label*="checkout" i]',
-      'a[href*="/checkout"]'
-    ];
+    for (let i = 0; i < 30; i += 1) {
+      const selectors = [
+        'button[data-test*="continue" i]',
+        'button[aria-label*="continue to checkout" i]',
+        'button[aria-label*="checkout" i]',
+        'a[href*="/checkout"]'
+      ];
 
-    if (clickFirstVisible(selectors) || clickButtonByText(['continue to checkout', 'checkout'])) {
-      console.log('[Target Hotfix] Clicked Continue to checkout.');
+      if (clickButtonByText(['continue to check out', 'continue to checkout']) || clickFirstVisible(selectors)) {
+        console.log('[Target Hotfix] Clicked Continue to check out.');
+        return;
+      }
+
+      await sleep(500);
     }
   }
 
   async function handleCheckoutPlaceOrder() {
-    for (let i = 0; i < 20; i += 1) {
-      if (clickFirstVisible(['button[data-test="placeOrderButton"]', 'button[data-test*="placeorder" i]']) ||
-          clickButtonByText(['place order'])) {
+    for (let i = 0; i < 30; i += 1) {
+      if (
+        clickFirstVisible(['button[data-test="placeOrderButton"]', 'button[data-test*="placeorder" i]']) ||
+        clickButtonByText(['place order'])
+      ) {
         console.log('[Target Hotfix] Clicked Place order.');
         return;
       }
-      await sleep(1000);
+      await sleep(800);
     }
   }
 
@@ -96,6 +224,6 @@ const _0x108d00=_0x34cb;(function(_0x24535e,_0x4116ed){const _0x38bce7=_0x34cb,_
   } else if (path.includes('/checkout')) {
     handleCheckoutPlaceOrder();
   } else {
-    handleProductPageCartIconFlow();
+    handleProductPageFlow();
   }
 })();
