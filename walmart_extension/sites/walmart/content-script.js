@@ -37,6 +37,14 @@ if (window.location.pathname === '/cart') {
           }
         }
 
+        if (!continueBtn) {
+          continueBtn = findButtonByText(
+            ['continue to checkout', 'proceed to checkout', 'checkout'],
+            document,
+            true
+          );
+        }
+
         if (continueBtn) {
           console.log('[Walmart Cart] Continue to checkout button found, clicking.');
           continueBtn.click();
@@ -406,11 +414,41 @@ if (window.location.pathname === '/cart') {
     await utils.sleep(ACTION_DELAY_MS);
 
     // Follow the requested flow: product -> cart -> checkout.
-    const viewCartBtn = finder.findElementWithSelectors(productPageSelectors.addToCartResult?.viewCartButton || []);
-    if (viewCartBtn && finder.isElementVisible(viewCartBtn)) {
-      await utils.clickElement(viewCartBtn, 'view-cart');
-    } else {
+    const clickViewCartTwice = async (buttonFinder, labelPrefix) => {
+      const firstButton = buttonFinder();
+      if (!firstButton || !finder.isElementVisible(firstButton) || finder.isElementDisabled(firstButton)) return false;
+      await utils.clickElement(firstButton, `${labelPrefix}-1`);
+      await utils.sleep(300);
+
+      const secondButton = buttonFinder();
+      if (secondButton && finder.isElementVisible(secondButton) && !finder.isElementDisabled(secondButton)) {
+        await utils.clickElement(secondButton, `${labelPrefix}-2`);
+      }
+      return true;
+    };
+
+    const clickedSelectorViewCart = await clickViewCartTwice(
+      () => finder.findElementWithSelectors(productPageSelectors.addToCartResult?.viewCartButton || []),
+      'view-cart'
+    );
+
+    if (!clickedSelectorViewCart) {
+      const clickedTextViewCart = await clickViewCartTwice(
+        () => finder.findButtonByText(['view cart'], document, true),
+        'view-cart-text'
+      );
+      if (clickedTextViewCart) {
+        return;
+      }
+    }
+
+    if (window.location.pathname !== '/cart') {
       window.location.href = 'https://www.walmart.com/cart';
+    } else {
+      const continueBtn = findButtonByText(['continue to checkout', 'proceed to checkout', 'checkout'], document, true);
+      if (continueBtn) {
+        await utils.clickElement(continueBtn, 'continue-to-checkout');
+      }
     }
   }
 
