@@ -428,18 +428,6 @@ if (window.location.pathname === '/cart') {
 
     const qty = siteSettings.quantity || 1;
 
-    const buyNowBtn = finder.findElementWithSelectors(productPageSelectors.buyNow || []);
-    if (buyNowBtn && finder.isElementVisible(buyNowBtn) && !finder.isElementDisabled(buyNowBtn)) {
-      utils.updateStatus('Using Buy Now...', 'status-running');
-      await utils.clickElement(buyNowBtn, 'buy-now');
-      checkoutInProgress = false;
-      if (qty > 1) {
-        await utils.sleep(ACTION_DELAY_MS);
-        window.location.href = 'https://www.walmart.com/cart';
-      }
-      return;
-    }
-
     if (qty > 1) await setQuantity(qty);
 
     const maxAttempts = 10;
@@ -453,6 +441,14 @@ if (window.location.pathname === '/cart') {
     }
 
     if (!btn) {
+      const buyNowBtn = finder.findElementWithSelectors(productPageSelectors.buyNow || []);
+      if (buyNowBtn && finder.isElementVisible(buyNowBtn) && !finder.isElementDisabled(buyNowBtn)) {
+        utils.updateStatus('Add to cart unavailable. Using Buy Now...', 'status-running');
+        await utils.clickElement(buyNowBtn, 'buy-now');
+        checkoutInProgress = false;
+        return;
+      }
+
       checkoutInProgress = false;
       throw new Error('Add to cart button not found after ' + maxAttempts + ' attempts');
     }
@@ -916,7 +912,10 @@ if (window.location.pathname === '/cart') {
         '[data-automation-id="atc-button"]',
         'button[data-testid="ip-add-to-cart-btn"]',
         'button[data-testid="add-to-cart-btn"]',
-        '#btn-atc'
+        '#btn-atc',
+        '.WMButton[data-tl-id="atc-button"]',
+        'button[aria-label*="Add to cart"]',
+        'button[aria-label*="Add to Cart"]'
       ]) || clickByText(['add to cart']);
 
     if (!clickedAddToCart) return;
