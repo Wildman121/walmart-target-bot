@@ -2,6 +2,7 @@
 // Mirrors the structure of the Target content script.
 
 console.log('[Walmart] Starting execution.');
+console.log('[Walmart] Build marker:', 'walmart-content-3.75');
 
 if (window.location.pathname === '/cart') {
   // Cart page — handle auto-close logic
@@ -88,9 +89,8 @@ if (window.location.pathname === '/cart') {
 
     if (msg.action === 'activateSite' && msg.site === 'walmart') {
       console.log('[Walmart] Received activateSite command.');
-      isEnabled    = true;
       siteSettings = msg.siteSettings || siteSettings;
-      if (siteSettings.enabled !== undefined) isEnabled = siteSettings.enabled;
+      isEnabled    = globalSettings.enabled !== false && siteSettings.enabled === true;
       if (isEnabled) {
         loadSettingsAndStart().catch(e => console.error('[Walmart] Activation error:', e));
       }
@@ -109,12 +109,26 @@ if (window.location.pathname === '/cart') {
     }
 
     if (msg.action === 'updateSiteSetting' && msg.site === 'walmart') {
-      siteSettings[msg.setting] = msg.value;
-      if (msg.setting === 'enabled') {
-        const wasEnabled = isEnabled;
-        isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
-        if (!wasEnabled && isEnabled) loadSettingsAndStart().then(() => detectCurrentPageType() !== 'cart' && handlePageType(detectCurrentPageType()));
-        if (wasEnabled && !isEnabled) cleanupProcesses();
+      const prevEnabled = isEnabled;
+
+      if (msg.siteSettings && typeof msg.siteSettings === 'object') {
+        siteSettings = { ...siteSettings, ...msg.siteSettings };
+      } else if (msg.setting) {
+        siteSettings[msg.setting] = msg.value;
+      }
+
+      isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
+
+      if (!prevEnabled && isEnabled) {
+        loadSettingsAndStart()
+          .then(() => {
+            const pageType = detectCurrentPageType();
+            if (pageType !== 'cart') handlePageType(pageType);
+          })
+          .catch(e => console.error('[Walmart] Failed to apply updated site settings:', e));
+      }
+      if (prevEnabled && !isEnabled) {
+        cleanupProcesses();
       }
     }
 
@@ -133,13 +147,32 @@ if (window.location.pathname === '/cart') {
     return false;
   });
 
+  // Keep enable state in sync even if toggles are changed without direct tab messaging.
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+
+    const prevEnabled = isEnabled;
+    if (changes.globalSettings?.newValue) {
+      globalSettings = changes.globalSettings.newValue || {};
+    }
+    if (changes.siteSettings?.newValue?.walmart) {
+      siteSettings = changes.siteSettings.newValue.walmart || {};
+    }
+
+    isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
+    if (prevEnabled && !isEnabled) {
+      console.log('[Walmart] Detected disable via storage change; cleaning up.');
+      cleanupProcesses();
+    }
+  });
+
   // ── Settings loader ───────────────────────────────────────────────────────
   async function loadSettingsAndStart() {
     try {
       const stored = await storage.getFromStorage(['siteSettings', 'globalSettings', 'selectedProfile']);
       siteSettings   = stored.siteSettings?.walmart || {};
       globalSettings = stored.globalSettings || { autoSubmit: true, randomizeDelay: false };
-      isEnabled      = siteSettings.enabled === true;
+      isEnabled      = globalSettings.enabled !== false && siteSettings.enabled === true;
 
       const profilesData = await storage.getProfiles();
       const profiles     = profilesData.profiles || [];
@@ -166,10 +199,11 @@ if (window.location.pathname === '/cart') {
 
   // ── Page type detection ───────────────────────────────────────────────────
   function detectCurrentPageType() {
-    const path = window.location.pathname;
+    if (window.location.href.startsWith('https://www.walmart.com/ip/')) return 'product';
+
+    const path = window.location.pathname || '';
     if (path.startsWith('/checkout')) return 'checkout';
     if (path === '/cart')             return 'cart';
-    if (path.startsWith('/ip/'))      return 'product';
     if (window.location.pathname.includes('/login')) return 'login';
     return 'unknown';
   }
@@ -185,6 +219,8 @@ if (window.location.pathname === '/cart') {
       case 'product':
         utils.updateStatus('Product page detected', 'status-waiting');
         setupProductPageObserver();
+        await utils.sleep(250);
+        doAddToCart().catch(handleError);
         break;
       case 'checkout':
         utils.updateStatus('Starting checkout...', 'status-running');
@@ -245,6 +281,12 @@ if (window.location.pathname === '/cart') {
 
   // ── Add to cart (invoked by background when product page is active) ──────
   async function doAddToCart() {
+    const pageType = detectCurrentPageType();
+    if (pageType !== 'product') {
+      console.log('[Walmart] Skipping add-to-cart: not on product page. Current page type:', pageType);
+      return;
+    }
+
     if (checkoutInProgress) { console.log('[Walmart] Add-to-cart already in progress.'); return; }
     checkoutInProgress = true;
     currentStep = 'add-to-cart';
@@ -271,13 +313,17 @@ if (window.location.pathname === '/cart') {
     await utils.clickElement(btn, 'add-to-cart');
     utils.updateStatus('Waiting for cart confirmation...', 'status-running');
 
-    // Wait for modal/confirmation
+    // Wait for modal/confirmation. If Walmart changes modal markup and we time out,
+    // continue to checkout instead of hard-refreshing.
     const confirmed = await waitForAddToCartResult(3000);
-    if (!confirmed) {
+    if (confirmed === false) {
       checkoutInProgress = false;
       utils.updateStatus('Cart not confirmed — refreshing...', 'status-waiting');
       window.location.reload();
       return;
+    }
+    if (confirmed === null) {
+      console.log('[Walmart] Add-to-cart confirmation timed out, proceeding to checkout fallback.');
     }
 
     utils.updateStatus('Added to cart! Proceeding to checkout...', 'status-running');
