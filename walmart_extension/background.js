@@ -60,7 +60,19 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
     }
 
     try {
-      await injectScripts(tabId, WALMART_SCRIPTS);
+      const [{ result: alreadyInjected } = { result: false }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => Boolean(window.__polarWalmartBundleInjected)
+      });
+
+      if (!alreadyInjected) {
+        await injectScripts(tabId, WALMART_SCRIPTS);
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => { window.__polarWalmartBundleInjected = true; }
+        });
+      }
+
       chrome.tabs.sendMessage(tabId, {
         action: 'detectPage',
         site: 'walmart',
@@ -73,4 +85,56 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
   });
 
   console.log('[Walmart BG] Minimal product-page-only handler active.', WALMART_HANDLER_BUILD);
+})();
+// ============================================================
+// WALMART CART REDIRECT HANDLER (appended — unobfuscated)
+// ============================================================
+
+(function () {
+  'use strict';
+
+  const WALMART_CART_URL = 'https://www.walmart.com/cart';
+
+  function isWalmartTab(sender) {
+    const url = sender?.tab?.url;
+    return typeof url === 'string' && url.includes('walmart.com');
+  }
+
+  function isSuccessfulAddToCartMessage(message) {
+    if (!message || typeof message !== 'object') return false;
+
+    const action = String(message.action || '').toLowerCase();
+    const type = String(message.type || '').toLowerCase();
+    const status = String(message.status || '').toLowerCase();
+    const result = String(message.result || '').toLowerCase();
+
+    const looksLikeAddToCartEvent =
+      action.includes('addtocart') ||
+      action.includes('add_to_cart') ||
+      type.includes('addtocart') ||
+      type.includes('add_to_cart');
+
+    const looksSuccessful =
+      message.success === true ||
+      status.includes('success') ||
+      result.includes('success') ||
+      result.includes('added') ||
+      status.includes('added');
+
+    return looksLikeAddToCartEvent && looksSuccessful;
+  }
+
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    if (!isWalmartTab(sender)) return;
+    if (!isSuccessfulAddToCartMessage(message)) return;
+
+    const tabId = sender?.tab?.id;
+    if (typeof tabId !== 'number') return;
+
+    chrome.tabs.update(tabId, { url: WALMART_CART_URL }).catch((err) => {
+      console.error('[Walmart Cart Redirect] Failed to navigate to cart:', err);
+    });
+  });
+
+  console.log('[Walmart Cart Redirect] Handler active.');
 })();
