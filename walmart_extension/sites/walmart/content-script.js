@@ -37,6 +37,14 @@ if (window.location.pathname === '/cart') {
           }
         }
 
+        if (!continueBtn) {
+          continueBtn = findButtonByText(
+            ['continue to checkout', 'proceed to checkout', 'checkout'],
+            document,
+            true
+          );
+        }
+
         if (continueBtn) {
           console.log('[Walmart Cart] Continue to checkout button found, clicking.');
           continueBtn.click();
@@ -410,7 +418,20 @@ if (window.location.pathname === '/cart') {
     if (viewCartBtn && finder.isElementVisible(viewCartBtn)) {
       await utils.clickElement(viewCartBtn, 'view-cart');
     } else {
+      const viewCartByText = finder.findButtonByText(['view cart'], document, true);
+      if (viewCartByText) {
+        await utils.clickElement(viewCartByText, 'view-cart-text');
+        return;
+      }
+    }
+
+    if (window.location.pathname !== '/cart') {
       window.location.href = 'https://www.walmart.com/cart';
+    } else {
+      const continueBtn = findButtonByText(['continue to checkout', 'proceed to checkout', 'checkout'], document, true);
+      if (continueBtn) {
+        await utils.clickElement(continueBtn, 'continue-to-checkout');
+      }
     }
   }
 
