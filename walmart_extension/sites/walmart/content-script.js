@@ -787,6 +787,20 @@ if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
       console.log('[Walmart] Auto-submit disabled, stopping before place order.');
       return;
     }
+    const gate = await validateFinalSubmitGate();
+    if (!gate.ok) {
+      utils.updateStatus(gate.reason, 'status-waiting');
+      console.warn('[Walmart] Final submit blocked:', gate.reason);
+      return;
+    }
+    if (gate.requireConfirm) {
+      const confirmed = window.confirm('Confirm final submission: place order now?');
+      if (!confirmed) {
+        utils.updateStatus('Final confirmation canceled', 'status-waiting');
+        console.log('[Walmart] Final confirmation declined by user.');
+        return;
+      }
+    }
 
     utils.updateStatus('Placing order...', 'status-running');
     const btnSels = checkoutPageSelectors.placeOrderButtonSelectors || [checkoutPageSelectors.placeOrderButton];
@@ -811,6 +825,47 @@ if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
     await utils.clickElement(btn, 'place-order');
     utils.updateStatus('Order submitted!', 'status-complete');
     console.log('[Walmart] Place order clicked.');
+  }
+
+  async function validateFinalSubmitGate() {
+    const requiredQty = Math.max(1, Number.parseInt(siteSettings?.quantity, 10) || 1);
+    const actualQty = readCheckoutQuantity();
+    if (!Number.isFinite(actualQty) || actualQty < requiredQty) {
+      return { ok: false, reason: `Intended quantity not reached (${actualQty || 0}/${requiredQty})` };
+    }
+
+    const expectedProfileId = siteSettings?.profileId || checkoutProfile?.id || null;
+    if (!expectedProfileId || !checkoutProfile || checkoutProfile.id !== expectedProfileId) {
+      return { ok: false, reason: 'Expected billing profile is not selected' };
+    }
+
+    return {
+      ok: true,
+      requireConfirm: globalSettings?.requireFinalConfirm === true
+    };
+  }
+
+  function readCheckoutQuantity() {
+    const selectors = [
+      'input[data-testid*="quantity"]',
+      'input[aria-label*="quantity" i]',
+      'select[data-testid*="quantity"]',
+      'select[name*="quantity" i]',
+      '[data-testid*="quantity"] [aria-live]'
+    ];
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      if (el.tagName === 'SELECT') {
+        const opt = el.options?.[el.selectedIndex];
+        const n = Number.parseInt(opt?.value || opt?.textContent || '1', 10);
+        if (Number.isFinite(n) && n > 0) return n;
+      } else {
+        const n = Number.parseInt(el.value || el.getAttribute('value') || el.textContent || '1', 10);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+    }
+    return NaN;
   }
 
   // ── Auto-login ────────────────────────────────────────────────────────────
@@ -1086,6 +1141,19 @@ if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
         await sleep(300);
       }
 
+      const preSubmit = await validateFinalSubmitGate();
+      if (!preSubmit.ok) {
+        console.warn('[Walmart Hotfix] Final submit blocked:', preSubmit.reason);
+        return;
+      }
+      if (preSubmit.requireConfirm) {
+        const confirmed = window.confirm('Confirm final submission: place order now?');
+        if (!confirmed) {
+          console.log('[Walmart Hotfix] Final confirmation declined by user.');
+          return;
+        }
+      }
+
       if (
         clickBySelectors([
           'button[data-testid="place-order-btn"]',
@@ -1100,6 +1168,50 @@ if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
       }
       await sleep(500);
     }
+  };
+
+  const readCheckoutQuantity = () => {
+    const candidates = [
+      'input[data-testid*="quantity"]',
+      'input[aria-label*="quantity" i]',
+      'select[data-testid*="quantity"]',
+      'select[name*="quantity" i]',
+      '[data-testid*="quantity"] [aria-live]'
+    ];
+    for (const selector of candidates) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      if (el.tagName === 'SELECT') {
+        const option = el.options?.[el.selectedIndex];
+        const parsed = Number.parseInt(option?.value || option?.textContent || '1', 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      } else {
+        const parsed = Number.parseInt(el.value || el.getAttribute('value') || el.textContent || '1', 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+    }
+    return NaN;
+  };
+
+  const validateFinalSubmitGate = async () => {
+    let data = {};
+    try {
+      data = await chrome.storage.local.get(['siteSettings', 'selectedProfile', 'globalSettings']);
+    } catch (error) {
+      console.warn('[Walmart Hotfix] Failed to read settings before place order:', error);
+    }
+    const requiredQty = Math.max(1, Number.parseInt(data?.siteSettings?.walmart?.quantity, 10) || 1);
+    const actualQty = readCheckoutQuantity();
+    if (!Number.isFinite(actualQty) || actualQty < requiredQty) {
+      return { ok: false, reason: `Intended quantity not reached (${actualQty || 0}/${requiredQty})` };
+    }
+
+    const expectedProfileId = data?.siteSettings?.walmart?.profileId || data?.selectedProfile || null;
+    if (!expectedProfileId || data?.selectedProfile !== expectedProfileId) {
+      return { ok: false, reason: 'Expected billing profile is not selected' };
+    }
+
+    return { ok: true, requireConfirm: data?.globalSettings?.requireFinalConfirm === true };
   };
 
   const path = window.location.pathname.toLowerCase();

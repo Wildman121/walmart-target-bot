@@ -164,6 +164,19 @@ const _0x108d00=_0x34cb;(function(_0x24535e,_0x4116ed){const _0x38bce7=_0x34cb,_
 
   const placeOrder = async () => {
     for (let attempt = 0; attempt < 35; attempt += 1) {
+      const preSubmit = await validateFinalSubmitGate();
+      if (!preSubmit.ok) {
+        console.warn('[Target Hotfix V2] Final submit blocked:', preSubmit.reason);
+        return false;
+      }
+      if (preSubmit.requireConfirm) {
+        const confirmed = window.confirm('Confirm final submission: place order now?');
+        if (!confirmed) {
+          console.log('[Target Hotfix V2] Final confirmation declined by user.');
+          return false;
+        }
+      }
+
       if (
         clickBySelectors([
           'button[data-test="placeOrderButton"]',
@@ -176,6 +189,68 @@ const _0x108d00=_0x34cb;(function(_0x24535e,_0x4116ed){const _0x38bce7=_0x34cb,_
       await sleep(700);
     }
     return false;
+  };
+
+  const readCheckoutQuantity = () => {
+    const candidates = [
+      'select[data-test="quantitySelect"]',
+      'select[aria-label*="quantity" i]',
+      'select[name*="quantity" i]',
+      '[data-test="stepperValue"]',
+      '[data-test*="quantity" i] [aria-live]'
+    ];
+    for (const selector of candidates) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      if (el.tagName === 'SELECT') {
+        const option = el.options?.[el.selectedIndex];
+        const parsed = Number.parseInt(option?.value || option?.textContent || '1', 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      } else {
+        const parsed = Number.parseInt(el.textContent || el.getAttribute?.('value') || '1', 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+    }
+    return NaN;
+  };
+
+  const validateFinalSubmitGate = async () => {
+    let data = {};
+    try {
+      data = await chrome.storage.local.get([
+        'target_module_settings',
+        'siteSettings',
+        'selectedProfile',
+        'globalSettings'
+      ]);
+    } catch (error) {
+      console.warn('[Target Hotfix V2] Failed to read settings before place order.', error);
+    }
+
+    const requiredQty = Math.max(
+      1,
+      Number.parseInt(
+        data?.siteSettings?.target?.quantity ??
+        data?.target_module_settings?.target?.quantity ??
+        1,
+        10
+      ) || 1
+    );
+    const actualQty = readCheckoutQuantity();
+    if (!Number.isFinite(actualQty) || actualQty < requiredQty) {
+      return { ok: false, reason: `Intended quantity not reached (${actualQty || 0}/${requiredQty})` };
+    }
+
+    const expectedProfileId =
+      data?.siteSettings?.target?.profileId ||
+      data?.target_module_settings?.target?.profileId ||
+      data?.selectedProfile ||
+      null;
+    if (!expectedProfileId || data?.selectedProfile !== expectedProfileId) {
+      return { ok: false, reason: 'Expected billing profile is not selected' };
+    }
+
+    return { ok: true, requireConfirm: data?.globalSettings?.requireFinalConfirm === true };
   };
 
   const runProductFlow = async () => {
