@@ -905,8 +905,8 @@ if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
   const CLICK_TEXT = {
     addToCart: ['add to cart'],
     viewCart: ['view cart'],
-    continueToCheckout: ['continue to checkout'],
-    placeOrder: ['place order for']
+    continueToCheckout: ['continue to checkout', 'checkout'],
+    placeOrder: ['place order for', 'place order']
   };
 
   const readSelectedQuantity = async () => {
