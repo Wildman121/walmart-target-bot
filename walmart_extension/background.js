@@ -27,7 +27,6 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
     'common/storage.js',
     'common/checkout-base.js',
     'sites/walmart/selectors.js',
-    'sites/walmart/checkout.js',
     'sites/walmart/content-script.js'
   ];
 
@@ -86,10 +85,15 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
         // Give the scripts 200ms to initialise then send detectPage
         if (pageType !== 'unknown') {
           setTimeout(async () => {
-            const tabData = await chrome.storage.local.get(['siteSettings']);
+            const tabData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
             const ss = (tabData.siteSettings || {}).walmart || {};
+            const globalEnabled = tabData.globalSettings?.enabled !== false;
             if (!ss.enabled) {
               console.log('[Walmart BG] Walmart disabled in settings — not activating.');
+              return;
+            }
+            if (!globalEnabled) {
+              console.log('[Walmart BG] Global toggle is off — not activating Walmart.');
               return;
             }
             chrome.tabs.sendMessage(tabId, {
