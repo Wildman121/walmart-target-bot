@@ -20,6 +20,14 @@
     return typeof url === 'string' && url.startsWith('https://www.walmart.com/ip/');
   }
 
+  function isWalmartCheckoutPage(url) {
+    return typeof url === 'string' && url.startsWith('https://www.walmart.com/checkout');
+  }
+
+  function isWalmartCartPage(url) {
+    return typeof url === 'string' && url.startsWith('https://www.walmart.com/cart');
+  }
+
   async function injectWalmartScripts(tabId) {
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -40,7 +48,12 @@
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete') return;
     if (!tab || !tab.url || !isWalmartUrl(tab.url)) return;
-    if (!isDirectWalmartProductPage(tab.url)) return;
+
+    const onProductPage = isDirectWalmartProductPage(tab.url);
+    const onCheckoutPage = isWalmartCheckoutPage(tab.url);
+    const onCartPage = isWalmartCartPage(tab.url);
+
+    if (!onProductPage && !onCheckoutPage && !onCartPage) return;
 
     const settingsData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
     const walmartSettings = (settingsData.siteSettings || {}).walmart || {};
@@ -48,12 +61,19 @@
     const walmartEnabled = walmartSettings.enabled === true;
     if (!globalEnabled || !walmartEnabled) return;
 
+    if (onCartPage) {
+      chrome.tabs.update(tabId, { url: 'https://www.walmart.com/checkout' });
+      return;
+    }
+
+    const pageType = onCheckoutPage ? 'checkout' : 'product';
+
     try {
       await injectWalmartScripts(tabId);
       chrome.tabs.sendMessage(tabId, {
         action: 'detectPage',
         site: 'walmart',
-        type: 'product',
+        type: pageType,
         siteSettings: walmartSettings
       }).catch(() => {});
     } catch (err) {
@@ -61,5 +81,5 @@
     }
   });
 
-  console.log('[Walmart BG module] Minimal product-page-only handler active.', WALMART_HANDLER_BUILD);
+  console.log('[Walmart BG module] Product + checkout handler active.', WALMART_HANDLER_BUILD);
 })();
