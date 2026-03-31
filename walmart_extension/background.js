@@ -6,18 +6,14 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
 (function() {
   'use strict';
 
-  // ── Walmart URL helpers ──────────────────────────────────────────────────
   function isWalmartUrl(url) {
-    return url && url.includes('walmart.com') && !url.startsWith('chrome://');
+    return typeof url === 'string' && url.includes('walmart.com') && !url.startsWith('chrome://');
   }
 
-  function detectWalmartPageType(url) {
-    if (!url) return 'unknown';
-    if (url.startsWith('https://www.walmart.com/ip/')) return 'product';
-    return 'unknown';
+  function isDirectWalmartProductPage(url) {
+    return typeof url === 'string' && url.startsWith('https://www.walmart.com/ip/');
   }
 
-  // Scripts injected into every Walmart page (common helpers + site-specific)
   const WALMART_SCRIPTS = [
     'common/utils.js',
     'common/element-finder.js',
@@ -27,119 +23,42 @@ const _0x55cbc1=_0x3387;(function(_0x2f80ce,_0x4ea59f){const _0x237252=_0x3387,_
     'sites/walmart/content-script.js'
   ];
 
-  // Track per-tab injection keys the same way the Target handler does
-  // (reuses the shared `injectedScripts` object already defined above)
-
-  // ── Initialise default Walmart siteSettings on install ──────────────────
   chrome.runtime.onInstalled.addListener(() => {
     chrome.storage.local.get(['siteSettings'], result => {
-      const ss = result.siteSettings || {};
-      if (!ss.walmart) {
-        ss.walmart = { enabled: false, quantity: 1, profileId: '' };
-        chrome.storage.local.set({ siteSettings: ss });
-        console.log('[Walmart BG] Default siteSettings initialised.');
+      const all = result.siteSettings || {};
+      if (!all.walmart) {
+        all.walmart = { enabled: false, quantity: 1, profileId: '' };
+        chrome.storage.local.set({ siteSettings: all });
       }
     });
   });
 
-  // ── Tab update listener for Walmart ─────────────────────────────────────
-  chrome.tabs.onUpdated.addListener(async function(tabId, changeInfo, tab) {
-    if (!tab.url || !isWalmartUrl(tab.url)) return;
-    if (!tab.url.startsWith('https://www.walmart.com/ip/')) {
-      // Explicit product-page-only mode requested by user.
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status !== 'complete') return;
+    if (!tab?.url || !isWalmartUrl(tab.url)) return;
+    if (!isDirectWalmartProductPage(tab.url)) return;
+
+    const settingsData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
+    const walmartSettings = (settingsData.siteSettings || {}).walmart || {};
+    const globalEnabled = settingsData.globalSettings?.enabled !== false;
+    const walmartEnabled = walmartSettings.enabled === true;
+
+    if (!globalEnabled || !walmartEnabled) {
       return;
     }
 
-    // --- Cart-page redirect detection (mirrors Target logic) ---------------
-    if (changeInfo.url && tab.url && tab.url.includes('walmart.com')) {
-      const prevInjectionKeys = Object.keys(injectedScripts).filter(k => k.startsWith(tabId + '_'));
-      if (prevInjectionKeys.length > 0) {
-        const prevHadNonCart = prevInjectionKeys.some(k => !k.includes('walmart.com/cart'));
-        if (prevHadNonCart && tab.url.includes('walmart.com/cart')) {
-          console.log('[Walmart BG] Detected product→cart redirect for tab', tabId);
-          prevInjectionKeys.forEach(k => delete injectedScripts[k]);
-          chrome.storage.local.get(['globalSettings'], data => {
-            const gs = data.globalSettings || {};
-            if (gs.autoCloseCartPage) {
-              console.log('[Walmart BG] Auto-close enabled, closing tab', tabId);
-              console.error('---------- AUTO-CLOSING WALMART CART TAB ----------');
-              chrome.tabs.remove(tabId, () => {
-                if (chrome.runtime.lastError) console.warn('[Walmart BG] Tab remove error:', chrome.runtime.lastError.message);
-                else console.log('[Walmart BG] Closed cart tab', tabId);
-              });
-            }
-          });
-          return;
-        }
-      }
-    }
-
-    // --- Inject on page complete -------------------------------------------
-    if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
-      if (!isWalmartUrl(tab.url)) return;
-
-      // Hard gate: if Walmart or global toggle is off, do not inject scripts at all.
-      // This prevents any page-level automation from running while disabled.
-      const gateData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
-      const walmartEnabled = (gateData.siteSettings || {}).walmart?.enabled === true;
-      const globalEnabled = gateData.globalSettings?.enabled !== false;
-      if (!walmartEnabled || !globalEnabled) {
-        console.log(
-          '[Walmart BG] Skipping script injection because automation is disabled.',
-          { walmartEnabled, globalEnabled }
-        );
-        return;
-      }
-
-      const pageType = detectWalmartPageType(tab.url);
-      console.log('[Walmart BG] Page type:', pageType, 'URL:', tab.url);
-
-      try {
-        await injectScripts(tabId, WALMART_SCRIPTS);
-        // Give the scripts 200ms to initialise then send detectPage
-        if (pageType !== 'unknown') {
-          setTimeout(async () => {
-            const tabData = await chrome.storage.local.get(['siteSettings', 'globalSettings']);
-            const ss = (tabData.siteSettings || {}).walmart || {};
-            const globalEnabled = tabData.globalSettings?.enabled !== false;
-            if (!ss.enabled) {
-              console.log('[Walmart BG] Walmart disabled in settings — not activating.');
-              return;
-            }
-            if (!globalEnabled) {
-              console.log('[Walmart BG] Global toggle is off — not activating Walmart.');
-              return;
-            }
-            chrome.tabs.sendMessage(tabId, {
-              action: 'detectPage',
-              site:   'walmart',
-              type:   pageType,
-              siteSettings: ss
-            }).catch(err => console.warn('[Walmart BG] Could not send detectPage to tab', tabId, ':', err.message));
-          }, 200);
-        }
-      } catch (e) {
-        console.error('[Walmart BG] Error injecting scripts into tab', tabId, ':', e);
-      }
+    try {
+      await injectScripts(tabId, WALMART_SCRIPTS);
+      chrome.tabs.sendMessage(tabId, {
+        action: 'detectPage',
+        site: 'walmart',
+        type: 'product',
+        siteSettings: walmartSettings
+      }).catch(() => {});
+    } catch (err) {
+      console.error('[Walmart BG] Injection/activation error:', err);
     }
   });
 
-  // ── Handle getSiteSettings requests from Walmart pages ──────────────────
-  // (The existing onMessage handler already handles 'getSiteSettings' generically,
-  //  but we add a Walmart-specific pathway here for activateSite.)
-  chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
-    if (!sender.tab) return false;
-
-    if (message.action === 'activateSite' && message.site === 'walmart') {
-      chrome.storage.local.get(['siteSettings'], data => {
-        const ss = (data.siteSettings || {}).walmart || {};
-        sendResponse({ success: true, siteSettings: ss });
-      });
-      return true; // async
-    }
-
-    return false;
-  });
-
-  console.log('[Walmart BG] Walmart background handler registered.');
+  console.log('[Walmart BG] Minimal product-page-only handler active.');
 })();
