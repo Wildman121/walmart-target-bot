@@ -891,14 +891,6 @@ if (!USE_WALMART_FLOW_2026 && window.location.pathname === '/cart') {
     return true;
   };
 
-  const clickBySelectors = (selectors) => {
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      if (clickElement(el)) return true;
-    }
-    return false;
-  };
-
   const clickByText = (texts) => {
     const needles = texts.map((text) => text.toLowerCase());
     const targets = Array.from(document.querySelectorAll('button, a, [role="button"]'));
