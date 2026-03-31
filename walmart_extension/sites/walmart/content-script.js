@@ -300,9 +300,11 @@ if (window.location.pathname === '/cart') {
 
   // ── Page type detection ───────────────────────────────────────────────────
   function detectCurrentPageType() {
-    if (window.location.href.startsWith('https://www.walmart.com/ip/')) return 'product';
-
     const path = window.location.pathname || '';
+    const host = (window.location.hostname || '').toLowerCase();
+    const isWalmartHost = host === 'www.walmart.com' || host === 'walmart.com';
+    if (isWalmartHost && path.startsWith('/ip/')) return 'product';
+
     if (path.startsWith('/checkout')) return 'checkout';
     if (path === '/cart')             return 'cart';
     if (window.location.pathname.includes('/login')) return 'login';
@@ -1037,12 +1039,40 @@ if (window.location.pathname === '/cart') {
     for (let attempt = 0; attempt < 40; attempt += 1) {
       if (
         clickBySelectors([
+          'button[data-testid="shipping-continue-btn"]',
+          'button[data-automation-id="shipping-continue-cta"]',
+          'button[data-testid="save-and-continue-btn"]',
+          'button[aria-label*="Continue to payment"]',
+          'button[aria-label*="Save and continue"]',
+          'button[aria-label*="Continue checkout"]',
+          'button[data-testid="continue-button"]'
+        ]) ||
+        clickByText(['continue to payment', 'save and continue', 'continue checkout', 'continue'])
+      ) {
+        await sleep(700);
+        continue;
+      }
+
+      const termsCheckbox = [
+        'input[data-testid="terms-checkbox"]',
+        'input[id="terms-and-conditions"]',
+        'input[name="terms"]'
+      ].map((selector) => document.querySelector(selector)).find(Boolean);
+
+      if (termsCheckbox && !termsCheckbox.checked && !termsCheckbox.disabled) {
+        termsCheckbox.click();
+        await sleep(300);
+      }
+
+      if (
+        clickBySelectors([
           'button[data-testid="place-order-btn"]',
           'button[data-automation-id="place-order-btn"]',
           'button[aria-label*="Place order"]',
+          'button[aria-label*="Review order"]',
           '#place-order-btn'
         ]) ||
-        clickByText(['place order'])
+        clickByText(['place order', 'review order'])
       ) {
         return;
       }
@@ -1055,7 +1085,7 @@ if (window.location.pathname === '/cart') {
     runCheckoutFlow();
   } else if (path === '/cart') {
     runCartFlow();
-  } else if (window.location.href.startsWith('https://www.walmart.com/ip/')) {
+  } else if (path.startsWith('/ip/')) {
     runProductFlow();
   }
 })();
