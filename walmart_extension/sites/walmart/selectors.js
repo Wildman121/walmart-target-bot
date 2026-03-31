@@ -200,6 +200,8 @@ const walmartCheckoutPageSelectors = {
     'button[data-automation-id="place-order-btn"]',
     'button[aria-label*="Place order"]',
     'button[aria-label*="Place Order"]',
+    'button[aria-label*="Pay now"]',
+    'button[aria-label*="Pay Now"]',
     '#place-order-btn'
   ],
   termsCheckbox: [
@@ -227,6 +229,17 @@ const walmartPopupSelectors = {
     'button[aria-label="Ok"]',
     'button[aria-label="Dismiss"]',
     'button[data-testid="dismiss-btn"]'
+  ]
+};
+
+const walmartCartPageSelectors = {
+  continueToCheckoutButton: [
+    'button[data-automation-id="cart-continue-checkout"]',
+    'button[data-testid="continue-to-checkout-button"]',
+    'button[data-testid="checkout-button"]',
+    'button[aria-label*="Continue to checkout"]',
+    'button[aria-label*="Checkout"]',
+    'a[href*="/checkout"]'
   ]
 };
 
@@ -264,11 +277,35 @@ const walmartLoginPageSelectors = {
   ]
 };
 
+const walmartAntiBotSelectors = {
+  challengeContainers: [
+    '[data-testid="captcha-container"]',
+    '#px-captcha',
+    '#captcha-container',
+    'iframe[src*="captcha"]',
+    'iframe[title*="challenge"]',
+    'iframe[title*="CAPTCHA"]',
+    'form[action*="challenge"]',
+    '[data-automation-id*="challenge"]',
+    '[class*="captcha"]',
+    '[id*="captcha"]'
+  ],
+  challengeText: [
+    'Verify you are a human',
+    'Press and hold',
+    'Security checkpoint',
+    'Please complete the challenge',
+    'unusual activity'
+  ]
+};
+
 window.walmartSelectors = {
   productPageSelectors: walmartProductPageSelectors,
+  cartPageSelectors: walmartCartPageSelectors,
   checkoutPageSelectors: walmartCheckoutPageSelectors,
   popupSelectors: walmartPopupSelectors,
-  loginPageSelectors: walmartLoginPageSelectors
+  loginPageSelectors: walmartLoginPageSelectors,
+  antiBotSelectors: walmartAntiBotSelectors
 };
 
 console.log('sites/walmart/selectors.js: Script loaded.');

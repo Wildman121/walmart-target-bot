@@ -5,17 +5,67 @@ console.log('[Walmart] Starting execution.');
 console.log('[Walmart] Build marker:', 'walmart-content-3.75');
 
 if (window.location.pathname === '/cart') {
-  // Cart page — handle auto-close logic
-  (async function handleCartPageClose() {
+  // Cart page — continue to checkout, then optional auto-close logic.
+  (async function handleCartPageActions() {
     try {
       const flagData = await chrome.storage.local.get(['cartCloseAttempted']);
       if (flagData.cartCloseAttempted) {
         console.log('[Walmart Cart] Close already attempted, skipping.');
-        return;
       }
-      await chrome.storage.local.set({ cartCloseAttempted: true });
-      const stored = await chrome.storage.session.get(['globalSettings']);
+
+      const stored = await chrome.storage.local.get(['globalSettings', 'siteSettings']);
       const globalSettings = stored.globalSettings || {};
+      const siteSettings = stored.siteSettings?.walmart || {};
+      const isEnabled = globalSettings.enabled !== false && siteSettings.enabled === true;
+
+      if (isEnabled) {
+        const continueSelectors = (window.walmartSelectors?.cartPageSelectors?.continueToCheckoutButton) || [
+          'button[data-automation-id="cart-continue-checkout"]',
+          'button[data-testid="continue-to-checkout-button"]',
+          'button[data-testid="checkout-button"]',
+          'button[aria-label*="Continue to checkout"]',
+          'button[aria-label*="Checkout"]',
+          'a[href*="/checkout"]'
+        ];
+
+        const findContinueButton = () => {
+          for (const sel of continueSelectors) {
+            const el = document.querySelector(sel);
+            if (el && el.offsetParent !== null && !el.disabled) {
+              return el;
+            }
+          }
+          const textCandidates = ['continue to checkout', 'checkout', 'proceed to checkout'];
+          const clickableNodes = Array.from(document.querySelectorAll('button, a'));
+          return clickableNodes.find(el => {
+            if (el.offsetParent === null || el.disabled) return false;
+            const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+            return textCandidates.some(t => text.includes(t));
+          }) || null;
+        };
+
+        let continueBtn = findContinueButton();
+        const start = Date.now();
+        while (!continueBtn && Date.now() - start < 8000) {
+          await new Promise(resolve => setTimeout(resolve, 250));
+          continueBtn = findContinueButton();
+        }
+        if (continueBtn) {
+          console.log('[Walmart Cart] Continue to checkout button found, clicking.');
+          continueBtn.click();
+          await chrome.storage.local.set({ cartCloseAttempted: true });
+          if (globalSettings.autoCloseCartPage === true) {
+            setTimeout(() => {
+              try { window.close(); } catch (e) { console.warn('[Walmart Cart] Failed close after continue click:', e); }
+            }, 1500);
+          }
+          return;
+        }
+
+        console.warn('[Walmart Cart] Continue to checkout button not found.');
+      }
+
+      await chrome.storage.local.set({ cartCloseAttempted: true });
       if (globalSettings.autoCloseCartPage === true) {
         console.log('[Walmart Cart] Auto-close enabled, closing tab.');
         window.close();
@@ -69,6 +119,7 @@ if (window.location.pathname === '/cart') {
   const checkoutPageSelectors  = selectors.checkoutPageSelectors  || {};
   const popupSelectors         = selectors.popupSelectors         || {};
   const loginPageSelectors     = selectors.loginPageSelectors     || {};
+  const antiBotSelectors       = selectors.antiBotSelectors       || {};
 
   // ── State ─────────────────────────────────────────────────────────────────
   let isEnabled       = false;
@@ -83,6 +134,7 @@ if (window.location.pathname === '/cart') {
   let placeOrderClicked   = false;
   let cvvConfirmClicked   = false;
   let cardVerifyClicked   = false;
+  let antiBotDetected     = false;
 
   // ── Message listener ──────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -215,6 +267,14 @@ if (window.location.pathname === '/cart') {
       utils.updateStatus('Walmart disabled', 'status-waiting');
       return;
     }
+    if (antiBotDetected && !hasAntiBotChallenge()) {
+      antiBotDetected = false;
+      console.log('[Walmart] Security challenge cleared; resuming automation.');
+    }
+    if (hasAntiBotChallenge()) {
+      handleAntiBotDetection();
+      return;
+    }
     console.log('[Walmart] Handling page type:', pageType);
     switch (pageType) {
       case 'product':
@@ -251,6 +311,27 @@ if (window.location.pathname === '/cart') {
     intervals = [];
   }
 
+  function hasAntiBotChallenge() {
+    const challengeContainers = antiBotSelectors.challengeContainers || [];
+    const visibleChallenge = finder.findElementWithSelectors(challengeContainers);
+    if (visibleChallenge && finder.isElementVisible(visibleChallenge)) {
+      return true;
+    }
+
+    const bodyText = (document.body?.innerText || '').toLowerCase();
+    const challengeText = antiBotSelectors.challengeText || [];
+    return challengeText.some(snippet => bodyText.includes(String(snippet).toLowerCase()));
+  }
+
+  function handleAntiBotDetection() {
+    if (antiBotDetected) return;
+    antiBotDetected = true;
+    cleanupProcesses();
+    const message = 'Security challenge detected. Complete it manually, then resume.';
+    utils.updateStatus(message, 'status-waiting');
+    console.warn('[Walmart] Security challenge detected; automation paused.');
+  }
+
   function handleError(err) {
     console.error('[Walmart] Checkout error at step "' + currentStep + '":', err);
     utils.updateStatus('Error: ' + err.message, 'status-waiting');
@@ -282,6 +363,10 @@ if (window.location.pathname === '/cart') {
 
   // ── Add to cart (invoked by background when product page is active) ──────
   async function doAddToCart() {
+    if (hasAntiBotChallenge()) {
+      handleAntiBotDetection();
+      return;
+    }
     const pageType = detectCurrentPageType();
     if (pageType !== 'product') {
       console.log('[Walmart] Skipping add-to-cart: not on product page. Current page type:', pageType);
@@ -315,20 +400,26 @@ if (window.location.pathname === '/cart') {
     utils.updateStatus('Waiting for cart confirmation...', 'status-running');
 
     // Wait for modal/confirmation. If Walmart changes modal markup and we time out,
-    // continue to checkout instead of hard-refreshing.
+    // avoid forcing checkout unless we have a positive add-to-cart signal.
     const confirmed = await waitForAddToCartResult(3000);
     if (confirmed === false) {
-      console.warn('[Walmart] Add-to-cart error state detected, attempting checkout anyway.');
+      checkoutInProgress = false;
+      utils.updateStatus('Add to cart failed. Please retry on the product page.', 'status-waiting');
+      console.warn('[Walmart] Add-to-cart error state detected; stopping before checkout redirect.');
+      return;
     }
     if (confirmed === null) {
-      console.log('[Walmart] Add-to-cart confirmation timed out, proceeding to checkout fallback.');
+      checkoutInProgress = false;
+      utils.updateStatus('Cart confirmation unclear. Verify cart, then continue.', 'status-waiting');
+      console.log('[Walmart] Add-to-cart confirmation timed out; not redirecting to checkout.');
+      return;
     }
 
-    utils.updateStatus('Added to cart! Proceeding to checkout...', 'status-running');
+    utils.updateStatus('Added to cart! Opening cart...', 'status-running');
     await utils.sleep(ACTION_DELAY_MS);
 
-    // Always move directly to checkout after add-to-cart attempt.
-    window.location.href = 'https://www.walmart.com/checkout';
+    // Follow the requested flow: product -> cart -> checkout.
+    window.location.href = 'https://www.walmart.com/cart';
   }
 
   async function setQuantity(qty) {
@@ -371,6 +462,10 @@ if (window.location.pathname === '/cart') {
 
   // ── Full checkout flow ───────────────────────────────────────────────────
   async function runCheckout() {
+    if (hasAntiBotChallenge()) {
+      handleAntiBotDetection();
+      return;
+    }
     if (checkoutInProgress) { console.log('[Walmart] Checkout already in progress.'); return; }
     if (!checkoutProfile) {
       utils.updateStatus('No profile selected', 'status-waiting');
@@ -429,6 +524,10 @@ if (window.location.pathname === '/cart') {
     const maxWait = 8000;
     const start = Date.now();
     while (Date.now() - start < maxWait) {
+      if (hasAntiBotChallenge()) {
+        handleAntiBotDetection();
+        return;
+      }
       const spinner = finder.findElementWithSelectors(spinnerSels);
       if (!spinner || !finder.isElementVisible(spinner)) break;
       await utils.sleep(ACTION_DELAY_MS);
@@ -446,6 +545,10 @@ if (window.location.pathname === '/cart') {
   }
 
   async function dismissPopups() {
+    if (hasAntiBotChallenge()) {
+      handleAntiBotDetection();
+      return;
+    }
     try {
       // Close button
       const closeBtn = finder.findElementWithSelectors(popupSelectors.closeButton || []);
@@ -465,6 +568,10 @@ if (window.location.pathname === '/cart') {
   }
 
   async function fillShipping() {
+    if (hasAntiBotChallenge()) {
+      handleAntiBotDetection();
+      return;
+    }
     const fields = checkoutPageSelectors.shippingFields;
     if (!fields) return;
     const profile = checkoutProfile;
@@ -497,6 +604,10 @@ if (window.location.pathname === '/cart') {
   }
 
   async function continueFromShipping() {
+    if (hasAntiBotChallenge()) {
+      handleAntiBotDetection();
+      return;
+    }
     const sels = checkoutPageSelectors.continueButtons;
     let btn = finder.findElementWithSelectors(sels?.shipping || []);
     if (!btn) btn = finder.findElementWithSelectors(sels?.saveAndContinue || []);
@@ -509,6 +620,10 @@ if (window.location.pathname === '/cart') {
   }
 
   async function fillPayment() {
+    if (hasAntiBotChallenge()) {
+      handleAntiBotDetection();
+      return;
+    }
     const formEl = finder.findElementWithSelectors(checkoutPageSelectors.paymentForm || []);
     if (!formEl) {
       console.log('[Walmart] Payment form not visible, skipping fill.');
@@ -548,6 +663,10 @@ if (window.location.pathname === '/cart') {
   }
 
   async function placeOrder() {
+    if (hasAntiBotChallenge()) {
+      handleAntiBotDetection();
+      return;
+    }
     if (!globalSettings.autoSubmit) {
       utils.updateStatus('Review order — auto-submit disabled', 'status-waiting');
       console.log('[Walmart] Auto-submit disabled, stopping before place order.');
@@ -556,7 +675,14 @@ if (window.location.pathname === '/cart') {
 
     utils.updateStatus('Placing order...', 'status-running');
     const btnSels = checkoutPageSelectors.placeOrderButtonSelectors || [checkoutPageSelectors.placeOrderButton];
-    const btn = finder.findElementWithSelectors(btnSels);
+    let btn = finder.findElementWithSelectors(btnSels);
+    if (!btn) {
+      btn = finder.findButtonByText([
+        'Place order',
+        'Pay now',
+        'Complete purchase'
+      ]) || null;
+    }
 
     if (!btn || !finder.isElementVisible(btn)) {
       console.warn('[Walmart] Place order button not found.');
@@ -582,6 +708,10 @@ if (window.location.pathname === '/cart') {
   // ── Auto-login ────────────────────────────────────────────────────────────
   async function tryAutoLogin() {
     try {
+      if (hasAntiBotChallenge()) {
+        handleAntiBotDetection();
+        return;
+      }
       const stored = await storage.getFromStorage(['walmartEmail', 'walmartPassword', 'globalSettings']);
       const email  = stored.walmartEmail;
       const pass   = stored.walmartPassword;
